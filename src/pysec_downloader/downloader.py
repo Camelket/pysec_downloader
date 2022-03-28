@@ -31,7 +31,7 @@ from posixpath import join as urljoin
 from pathlib import Path
 from urllib.parse import urlparse
 from zipfile import ZipFile
-from _constants import *
+from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -513,13 +513,11 @@ class Downloader:
         
         return soup.encode(soup.original_encoding) if soup.original_encoding else soup
     
-    def _transform_from_full_text(self, full_text: str, form_type: str, file_extension: list):
-        # quick to implement as most code is already in parser
-        pass 
-    
+
     def _get_systime_ms(self):
         return int(time.time() * SEC_RATE_LIMIT_DELAY)
     
+
     def _get_base_metadata_from_hit(self, hit: dict):
         '''getting the most relevant information out of a entry. returning a dict'''
         accession_number, filing_details_filename = hit["_id"].split(":", 1)
@@ -534,6 +532,7 @@ class Downloader:
             "base_url": submission_base_url,
             "main_file_name": filing_details_filename,
             "xsl": xsl}
+   
    
     def _json_from_search_api(
             self,
