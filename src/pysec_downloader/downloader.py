@@ -1,7 +1,8 @@
 '''
 Aim: Be able to download any SEC file type in every(as long as available
  on website) file format for every filer identified either by
- CIK or ticker symbol. While respecting the sec guidelines:
+ CIK or ticker symbol and found on the ticker:cik map of the sec. 
+ While respecting the sec guidelines:
   https://www.sec.gov/privacy.htm#security
   
   the most important are:
@@ -13,43 +14,12 @@ Sec information:
     https://www.sec.gov/os/accessing-edgar-data
     https://www.sec.gov/os/webmaster-faq#developers
 
-Flow of Program:
-    * Downloader creates session
-    * 
-    1) call is made to get_filings("aapl", 10-Q, from_date=2020-01-01, max_amount=10)
-    2) get the base-url to the wanted filings by making post request to search-API
-    3) get metadata from results 
-    4) try to get the prefered_file_extension by building the url with consideration of form type
-    5) downloaded each file and save and/or pass to callback
     
 Things to add:
     * splitting a full text submission and writting individual files 
-
-Things to fix:
-    * "html" as prefered file type doesnt match .htm files same for "htm" and .html
-    * 
-        
-
-Other Notes:
-        create an index file that makes lookup by case number faster
-
-        bulk data instead of pulling every 10-Q/10-K and parsing the xbrl
-        compare in case of PHUN for shares outstanding to see if relevant
-        facts are omitted by not linking them to us-gaap or dei
-
-        still need to pull individual S-1, S-3, 424B's ect
-        and parse those to get information on dilutive data
-        like shelves, notes, offerings ect!
-        need to parse those in html...
-        
-        see below for relevance of filing and specificatiosn:
-        https://www.sec.gov/dera/data/dera_edgarfilingcounts
-        https://www.sec.gov/edgar/filer-information/current-edgar-filer-manual
-
-   
+ 
 
 '''
-from tempfile import TemporaryFile
 from bs4 import BeautifulSoup
 import requests
 import json
