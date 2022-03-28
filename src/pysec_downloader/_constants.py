@@ -3,12 +3,14 @@
 EDGAR_ARCHIVES_BASE_URL = "https://www.sec.gov/Archives/edgar/data"
 SEC_SEARCH_API_URL = "https://efts.sec.gov/LATEST/search-index"
 SEC_API_XBRL_BASE = "https://data.sec.gov/api/xbrl"
+SEC_BULK_COMPANYFACTS = "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip"
+SEC_BULK_SUBMISSIONS = "https://www.sec.gov/Archives/edgar/daily-index/bulkdata/submissions.zip"
 SEC_API_XBRL_COMPANYCONCEPT_URL = "https://data.sec.gov/api/xbrl/companyconcept"
 SEC_API_XBRL_COMPANYFACTS_URL  = "https://data.sec.gov/api/xbrl/companyfacts"
 SEC_FILES_COMPANY_TICKERS = "https://www.sec.gov/files/company_tickers.json"
 SEC_FILES_COMPANY_TICKERS_EXCHANGES = "https://www.sec.gov/files/company_tickers_exchange.json"
 #INTERNAL FILE LOCATION
-# change paths if pysec downloader is cahnged to separate project
+# change paths if pysec downloader is changed to separate project?
 TICKERS_CIK_FILE = "./pysec_downloader/resources/company_tickers.json"
 SEC_RATE_LIMIT_DELAY = 1150 #ms
 PREFERED_FILE_TYPE_MAP = {

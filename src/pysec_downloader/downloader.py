@@ -222,7 +222,7 @@ class Downloader:
         return content
     
     def get_bulk_companyfacts(self, extract=True):
-        '''get all the companyfacts in one zip file
+        '''get all the companyfacts in one zip file (~1GB, extracted ~12GB)
         
         Args:
             extract: extract the zip into /companyfacts or just save the zip
@@ -232,18 +232,24 @@ class Downloader:
         resp.raise_for_status()
         if resp:
             resp = resp.content
-        save_path = None
         if extract is True:
-            save_path = self.root_path / "companyfacts"
-            save_path.mkdir(parents=True, exist_ok=True)
-            with ZipFile(save_path, "r") as z:
-                z.extractall(save_path)
-        else:
-            save_path = self.root_path
+            (self.root_path / "companyfacts").mkdir(parents=True, exist_ok=True)
+            save_path = self.root_path / "temp.zip"
+            if save_path.exists() and save_path.is_file():
+                save_path.unlink()
             save_path.write_bytes(resp)
+            extract_path = self.root_path / "companyfacts"   
+            with ZipFile(save_path, "r") as z:
+                z.extractall(extract_path)
+            save_path.unlink()
+        else:
+            save_path = self.root_path / "companyfacts.zip"
+            save_path.write_bytes(resp)
+            
     
     def get_bulk_submissions(self, extract=True):
         '''get a file of all the sec submissions for every company in one zip file
+            (~1.2GB, extracted ~6GB)
         
         Args:
             extract: extract the zip into /submissions or just save the zip
@@ -253,14 +259,18 @@ class Downloader:
         resp.raise_for_status()
         if resp:
             resp = resp.content
-        save_path = None
         if extract is True:
-            save_path = self.root_path / "submissions"
-            save_path.mkdir(parents=True, exist_ok=True)
+            (self.root_path / "submissions").mkdir(parents=True, exist_ok=True)
+            save_path = self.root_path / "temp.zip"
+            if save_path.exists() and save_path.is_file():
+                save_path.unlink()
+            save_path.write_bytes(resp)
+            extract_path = self.root_path / "submissions"   
             with ZipFile(save_path, "r") as z:
-                z.extractall(save_path)
+                z.extractall(extract_path)
+            save_path.unlink()
         else:
-            save_path = self.root_path
+            save_path = self.root_path / "submissions.zip"
             save_path.write_bytes(resp)
 
 
@@ -533,7 +543,7 @@ class Downloader:
             "main_file_name": filing_details_filename,
             "xsl": xsl}
    
-   
+
     def _json_from_search_api(
             self,
             ticker_or_cik: str,
