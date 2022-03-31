@@ -17,7 +17,22 @@ Sec information:
     
 Things to add:
     * splitting a full text submission and writting individual files 
- 
+    
+    *adjust pysec to create indexs for each company when downloading:
+        
+
+        base index:
+
+        the index is named by cik
+        the index is a csv file that lists all submissions by a CIK as:
+            form_type, file_number, file_path, file_date
+
+        filing number index:
+        the index is a json of form {file_number: [form_type, file_number, file_path, file_date]}
+    
+    *add query class that helps navigate the index ?
+
+
 
 '''
 from bs4 import BeautifulSoup
