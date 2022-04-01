@@ -16,21 +16,8 @@ Sec information:
 
     
 Things to add:
-    * splitting a full text submission and writting individual files 
+    * splitting a full text submission and writting individual files (will need to change how the indexes)
     
-    *adjust pysec to create indexs for each company when downloading:
-        
-
-        base index:
-
-        the index is named by cik
-        the index is a csv file that lists all submissions by a CIK as:
-            form_type, file_number, file_path, file_date
-
-        filing number index:
-        the index is a json of form {file_number: [form_type, file_number, file_path, file_date]}
-    
-    *add query class that helps navigate the index ?
 
 
 
@@ -44,6 +31,7 @@ from functools import wraps
 import logging
 from posixpath import join as urljoin
 from pathlib import Path
+from os import path
 from urllib.parse import urlparse
 from zipfile import ZipFile
 from csv import writer
@@ -77,15 +65,222 @@ r'''download interface for various SEC files.
     file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent") 
 
     other_file = dl.get_file_company_tickers()
+
+    # calling get_bulk_submissions downloads >10GB of files
+    dl.get_bulk_submissions()
+    # if you dont know the cik call dl._convert_to_cik10(ticker) to get it
+    # check if S-3's were filed after "2020-01-01" and get the info to donwload them
+    newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
+    for key, values in newfiles.items():
+        for v in values:
+            dl.get_filing_by_accession_number(key, *v)
     '''
 
+class IndexHandler:
+    '''create, add to and query the index for files donwloaded with Downloader
+    
+    Attributes:
+        root_path: root path of the files, 
+                   should be the same as specified for Downloader
+    '''
+
+    def __init__(self, root_path):
+        self.root_path = self._prepare_root_path(root_path)
+        self._checked_index_creation = False
+        self._base_index_path = self.root_path / "index" / "base_index"
+        self._file_num_index_path = self.root_path / "index" / "file_num_index"
+
+    def _get_base_index_path(self, cik10):
+        return self._base_index_path / cik10 +".csv"
+    
+    def _get_file_num_index_path(self, cik10):
+        return self._file_num_index_path / cik10 +".json"
+
+    def _prepare_root_path(self, path, create_folder=True):
+        if not isinstance(path, Path) and isinstance(path, str):
+            path = Path(path)
+        if isinstance(path, Path):
+            if create_folder is True:
+                if not path.exists():
+                    path.mkdir(parents=True)
+            elif create_folder is False:
+                if not path.exists():
+                    raise OSError("root_path doesnt exist")
+            return path
+        else:
+            raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
+
+    def get_newer_filings_meta(self, cik, after: str, tracked_filings: set = None):
+        '''check a submission file and get filings newer than 'after'.
+        
+        only works if you have downloaded the bulk submissions file!
+        Downloader -> get_bulk_submissions()
+        
+        Args:
+            path: str or pathlike object
+            after: format yyyy-mm-dd
+        '''
+        if len(cik) < 10:
+            cik = cik.zfill(10)
+        path = self.root_path / "submissions" / ("CIK" + cik + ".json") 
+        new_filings = {}
+        with open(path, "r") as f:
+            j = json.load(f)
+            stop_idx = None
+            try:
+                filing_dates = j["filings"]["recent"]["filingDate"]
+                len_f_dates = len(filing_dates)
+
+                for r in range(0, len_f_dates, 1):
+                    if filing_dates[r] <= after:
+                        if r == len_f_dates:
+                            break
+                        stop_idx = r
+                        break
+                if stop_idx is not None:
+                    new_filings[j["cik"]] = []
+                    filing = j["filings"]["recent"]
+                    for idx in range(0, stop_idx, 1):
+                        if (filing["form"][idx] in tracked_filings) or (tracked_filings is None):
+                            new_filings[j["cik"]].append(
+                               [filing["form"][idx],
+                                filing["accessionNumber"][idx].replace("-", ""),
+                                filing["primaryDocument"][idx],
+                                filing["filingDate"][idx],
+                                [filing["fileNumber"][idx]]])
+            except KeyError as e:
+                raise e
+                pass #second filing not handled yet
+            finally:
+                del j
+        return new_filings
+    
+
+    def get_related_filings(self, cik: str, file_number: str):
+        '''check the file number index for other filings with file_number
+        
+        Args:
+            cik: cik with leading 0's
+            file_number: the file number
+        Returns:
+            a list of lists where each of those lists has the fields:
+                form_type, relative_file_path, filing_date    
+        '''
+        with open(self._get_file_num_index_path(cik), "r") as f:
+            index = json.load(f)
+            return index[file_number]
+
+
+    def check_index(self):
+        '''check the index and remove none existant entries.
+        
+        check if files listed in the index are present and
+        if there are duplicate values in the base_index.'''
+        # get all base indexes
+        import pandas as pd
+        base_indexes = [p for p in self._base_index_path.glob("*.csv")]
+        base_remove_count = 0
+        num_remove_count = 0
+        for b in base_indexes:
+            original = pd.read_csv(b, delimiter=",")
+            # remove duplicates
+            df = original.drop_duplicates()
+            # load the file_num_index
+            num_index_path = self._file_num_index_path / b.name.replace(".csv", ".json")
+            with open(num_index_path, "r+") as file_num_index:
+                num_changed =  False
+                base_changed = False
+                num_index = json.load(file_num_index)
+                drop_rows = []
+                for row in df.iloc:
+                    if not (self.root_path / Path(row["file_path"])).exists():
+                        # remove entry from file_num_index
+                        try:
+                            num_obj = num_index[row["file_number"]]
+                            drop_idx = None
+                            for idx, item in enumerate(num_obj):
+                                if item[1] == row["file_path"]:
+                                    drop_idx = idx
+                                    break
+                            if drop_idx:
+                                num_changed = True
+                                num_obj.pop(drop_idx)
+                                num_index[row["file_number"]] = num_obj
+                                num_remove_count += 1
+                        except KeyError as e:
+                            logger.debug(f"{e} when trying to remove entry from file_number_index, row in base_index: {row}")
+
+                        base_changed = True
+                        drop_rows.append(row.name)    
+                # remove invalid rows from dataframe/base_index and rewrite files if needed
+                if base_changed is True:
+                    base_remove_count += len(drop_rows)
+                    df = df.drop(drop_rows)
+                    df.to_csv(b)
+                    logger.debug(f"changed base_index: {b}")
+                    if num_changed is True:
+                        json.dump(num_index, file_num_index)
+                        logger.debug(f"changed file_num_index: {num_index_path}")
+        logger.info((f"completed check of indexes \n"
+                     f"base_index: {base_remove_count} entries removed \n"
+                     f"num_index: {num_remove_count} entries removed \n"))
+    
+    
+    def _create_indexes(self, cik, form_type, accn, file_name, file_num, filing_date):
+        # need to fix rewritting whole json every time, how could i use seek()?
+        '''create index files or add to them. accession number is included in the file_path'''
+        if self._checked_index_creation is False:
+            if not self._base_index_path.exists():
+                self._base_index_path.mkdir(parents=True)
+            if not self._file_num_index_path.exists():
+                self._file_num_index_path.mkdir(parents=True)
+            self._checked_index_creation = True
+        rel_file_path = path.join(cik, form_type, accn, file_name)
+        base_path = self._get_base_index_path(cik)
+        file_num_path = self._get_file_num_index_path(cik)
+        base_path_row = [form_type, file_num, rel_file_path, filing_date]
+        file_num_row = [form_type, rel_file_path, filing_date]
+
+        with open(base_path, "a", newline="") as f:
+            if base_path.stat().st_size == 0:
+                base_header = ["form_type", "file_number", "file_path", "filing_date"]
+                writer(f).writerow(base_header)
+            writer(f).writerow(base_path_row)
+        content = None
+        try:
+            with open(file_num_path, "r") as f:
+                content = json.load(f)
+        except FileNotFoundError:
+            with open(file_num_path, "w") as f:
+                content = {}
+        try:
+            content[file_num].append(file_num_row)
+        except KeyError:
+            content[file_num] = []
+            content[file_num].append(file_num_row)
+        with open(file_num_path, "w") as f:
+            json.dump(content, f)
+        
+                
+        # add a check index_integrity function to check for missing files present in index
+        # and remove duplicate entries in the base_index
+    
+    def _get_base_index_path(self, cik):
+        return self._base_index_path / (str(cik)+".csv")
+    
+    def _get_file_num_index_path(self, cik):
+        return self._file_num_index_path / (str(cik)+".json")
+    
 
 class Downloader:
     '''suit to download various files from the sec
     
     enables easier access to download files from the sec. tries to follow the
     SEC guidelines concerning automated access (AFAIK, if I missed something
-    let me know: camelket.develop@gmail.com)
+    let me know: camelket.develop@gmail.com).
+
+    the filing index for get_filings() doesnt account for the content of
+    extracted zip files and instead adds a link to the .zip file!
 
     Attributes:
         root_path: where to save the downloaded files unless the method has
@@ -98,6 +293,7 @@ class Downloader:
     
     Raises:
         OsError: if root_path doesnt exist and create_folder is False
+        ValueError: if root_path isnt correct type (allowed: str, pathlib.Path)
     '''
     def __init__(self, root_path: str, retries: int = 10, user_agent: str = None, create_folder=True):
         self.user_agent = user_agent if user_agent else "maxi musterman max@muster.com"
@@ -108,9 +304,8 @@ class Downloader:
         self._sec_files_headers = self._construct_sec_files_headers()
         self._sec_xbrl_api_headers = self._construct_sec_xbrl_api_headers()
         self._lookuptable_ticker_cik = self._load_or_update_lookuptable_ticker_cik()
-        self._checked_index_creation = False
-        self._base_index_path = self.root_path / "index" / "base_index"
-        self._file_num_index_path = self.root_path / "index" / "file_num_index"
+        self.index_handler = IndexHandler(root_path)
+        
     
     def _prepare_root_path(self, path, create_folder=True):
         if not isinstance(path, Path) and isinstance(path, str):
@@ -126,6 +321,24 @@ class Downloader:
         else:
             raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
 
+    def get_filing_by_accession_number(self, cik, form_type, accession_number, save_name, filing_date, file_nums, save=True, create_index=True, extract_zip=True):
+        logger.debug(f"\n Called get_filing_by_accession_number with args: {locals()}")
+        base_url = urljoin(EDGAR_ARCHIVES_BASE_URL, cik)
+        file_url = urljoin(base_url, accession_number, save_name)
+        logger.debug(f"file_url: {file_url}")
+        file = self._download_filing(file_url, save_name, skip=False, fallback_url=None)
+        if Path(save_name).suffix == "htm":
+            file = self._resolve_relative_urls(file, base_url)
+        if save is True:
+                if file:
+                    self._save_filing(cik, form_type, accession_number, save_name, file, extract_zip=extract_zip)
+                    if (create_index is True) and (file_nums is not None):
+                        for file_num in file_nums:
+                            self.index_handler._create_indexes(cik, form_type, accession_number, save_name, file_num, filing_date)
+                else:
+                    logger.debug("didnt save/get filing despite that it should have. file was None")
+        
+        pass
 
     def get_filings(
         self,
@@ -139,6 +352,7 @@ class Downloader:
         want_amendments: bool = True,
         skip_not_prefered_extension: bool = False,
         save: bool = True,
+        extract_zip = True,
         create_index = True,
         resolve_urls: bool = True,
         callback = None):
@@ -160,9 +374,10 @@ class Downloader:
             callback: pass a function that expects a dict of {"file": file, "meta": meta}
                       meta includes the metadata.
         '''
+        ticker_or_cik = self._convert_to_cik10(ticker_or_cik)
         if prefered_file_type == (None or ""):
             if form_type not in PREFERED_FILE_TYPE_MAP.keys():
-                logger.info(f"No Default file_type set for this form_type: {form_type}. trying 'htm'")
+                logger.info(f"No Default file_type set for this form_type: {form_type}. defaulting to 'htm'")
                 prefered_file_type = "htm"
             else:
                 prefered_file_type = PREFERED_FILE_TYPE_MAP[form_type] 
@@ -186,16 +401,18 @@ class Downloader:
         for m in base_metas:
             # check if file is in index, if so check if it actually exists,
             #  if both are true skip and log the skipped file and this reason
-            file = self._download_filing(m)
+            file = self._download_filing(m["file_url"], m["save_name"], m["skip"], m["fallback_url"])
             if resolve_urls and Path(m["save_name"]).suffix == "htm":
                 file = self._resolve_relative_urls(file, m)
             if save is True:
                 if file:
-                    self._save_filing(m, file)
+                    self._save_filing(m["cik"], m["form_type"], m["accession_number"], m["save_name"], file, extract_zip=extract_zip)
+                    if create_index is True:
+                        file_nums = m["file_num"]
+                        for file_num in file_nums:
+                            self.index_handler._create_indexes(m["cik"], m["form_type"], m["accession_number"], m["save_name"], file_num, m["filing_date"])
                 else:
-                    logger.debug("didnt save filing despite that it should have.")
-                if create_index is True:
-                    self._create_indexes(m)
+                    logger.debug("didnt save/get filing despite that it should have. file was None")                
             if callback != None:
                 callback({"file": file, "meta": m})           
         return
@@ -356,8 +573,9 @@ class Downloader:
          Args:
             session: your instantiated session object
             sec_rate_limiting: toggle internal sec rate limiting,
+                               Not advised to set False, 
                                can result in being locked out.
-                               Not advised to set False.   
+                                
         '''
         try:
             self._set_ratelimiting(sec_rate_limiting)
@@ -370,6 +588,7 @@ class Downloader:
                 f"Creating new default session"))
             self._create_session()
         return
+    
     
     def _construct_sec_xbrl_api_headers(self):
         parsed = urlparse(SEC_API_XBRL_BASE)
@@ -445,82 +664,48 @@ class Downloader:
             raise ValueError("Didnt get content returned from get_file_company_tickers")
         return
 
-    def _download_filing(self, base_meta):
+    def _download_filing(self, file_url, save_name, skip, fallback_url=None):
         '''download a file and fallback on secondary url if 404. adds save_name to base_meta'''
-        logger.debug((f"called _download_filing with base_meta: {base_meta}"))
-        if base_meta["file_url"] is None and base_meta["skip"] == True:
+        logger.debug((f"called _download_filing with args: {locals()}"))
+        if file_url is None and skip is True:
             return
         headers = self._sec_files_headers
         try:
-            resp = self._get(url=base_meta["file_url"], headers=headers)
+            resp = self._get(url=file_url, headers=headers)
             # resp = self._get(url=base_meta["file_url"], headers=headers)
             resp.raise_for_status()
         except requests.HTTPError as e:
             if "404" in str(resp):
-                if base_meta["skip"]:
+                if (skip is True) or (fallback_url is None):
                     # tried to get the prefered filetype but no file was found,
                     # so skip it according to "skip_not_prefered_extension"
-                    logger.debug("skipping {}", base_meta)
+                    logger.debug("skipping {}", locals())
                     return
-                resp = self._get(url=base_meta["fallback_url"], headers=headers)
-                base_meta["save_name"] = Path(base_meta["fallback_url"]).name
+                resp = self._get(url=fallback_url, headers=headers)
+                save_name = Path(fallback_url).name if isinstance(fallback_url, str) else fallback_url.name
         else:
-            base_meta["save_name"] = Path(base_meta["file_url"]).name
+            save_name = Path(file_url).name if isinstance(file_url, str) else file_url.name
         filing = resp.content if resp.content else None
         return filing
     
-    def _create_indexes(self, base_meta):
-        if self._checked_index_creation is False:
-            if not self._base_index_path.exists():
-                self._base_index_path.mkdir(parents=True)
-            if not self._file_num_index_path.exists():
-                self._file_num_index_path.mkdir(parents=True)
-            self._checked_index_creation = True
-        base_path = self._get_base_index_path(base_meta["cik"])
-        film_num_path = self._get_file_num_index_path(base_meta["cik"])
-        base_path_row = 
-        film_num_row = 
-        #  try to append, otherwise create and write row, 
-        # and check if accn exists already 
-        # (how much overhead does the check generate, 
-        #   might be smarter to check after a while 
-        #   and just delete duplicates? shouldnt get any 
-        #   duplicates in the first place if i check the file location 
-        #   before download -> is it superflous to check it twice?)
-        try:
-            with open(base_path, "a") as f:
-
-                
-            
-            
-        # create and add entries to indices
-        # add a check index_integrity function to check for missing files
+    
 
 
         
     
-    def _get_base_index_path(self, cik):
-        return self._base_index_path / (str(cik)+".csv")
-    
-    def _get_file_num_index_path(self, cik):
-        return self._film_num_index_path / (str(cik)+".json")
     
     def _get_filing_save_path(self, ticker_or_cik, form_type, accn, file_name):
         # how to handle extracted zip files?
         return (self.root_path / ticker_or_cik / form_type / accn / file_name)
 
-    def _save_filing(self, base_meta, file):
+    def _save_filing(self, cik, form_type, accession_number, save_name, file, extract_zip=False):
         # save by cik and add searching folders by ticker in query class
-        '''save the filing and extract zips.'''
-        save_path = self._get_filing_save_path(
-                     base_meta["cik"]
-                    ,base_meta["form_type"]
-                    ,base_meta["accession_number"]
-                    ,base_meta["save_name"])
+        '''save the filing and extract zips. '''
+        save_path = self._get_filing_save_path(cik, form_type, accession_number, save_name)
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save_path.write_bytes(file)
         logger.debug(f"saved file to: {save_path}")
-        if base_meta["save_name"][-3:] == "zip":
+        if (save_name[-3:] == "zip") and (extract_zip is True):
             with ZipFile(save_path, "r") as z:
                 z.extractall(save_path.parent)
                 logger.debug(f"extracted_zipfile successfully")
@@ -571,10 +756,10 @@ class Downloader:
              f"created fallback_url:{base_meta['fallback_url']}\n"))
         return base_meta
     
-    def _resolve_relative_urls(self, filing: str, base_meta: dict):
+    def _resolve_relative_urls(self, filing: str, base_url: str):
         # soup content then resolve relative links and image locations
         soup = BeautifulSoup(filing)
-        base = base_meta["base_url"]
+        base = base_url
         for rurl in soup.find_all("a", href=True):
             href = rurl["href"]
             if href.startswith("http") or href.startswith("#"):
@@ -600,6 +785,7 @@ class Downloader:
         film_num = hit["_source"]["film_num"]
         submission_base_url = urljoin(urljoin(EDGAR_ARCHIVES_BASE_URL, cik),(accession_number_no_dash))
         xsl = hit["_source"]["xsl"] if hit["_source"]["xsl"] else None
+        filing_date = hit["_source"]["file_date"]
         return {
             "form_type": hit["_source"]["root_form"],
             "accession_number": accession_number,
@@ -607,7 +793,8 @@ class Downloader:
             "base_url": submission_base_url,
             "main_file_name": filing_details_filename,
             "xsl": xsl,
-            "file_num": film_num }
+            "file_num": film_num,
+            "filing_date": filing_date}
    
 
     def _json_from_search_api(
@@ -656,7 +843,7 @@ class Downloader:
 
             if result["hits"]["hits"] == []:
                 logger.debug(f"[{ticker_or_cik}:{form_type}] -> No filings found for this combination")
-                return None
+                break
             
             for res in result["hits"]["hits"]:
                 # only filter for amendments here
@@ -718,9 +905,5 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-
-    
-
-
 
 
