@@ -46,6 +46,7 @@ from posixpath import join as urljoin
 from pathlib import Path
 from urllib.parse import urlparse
 from zipfile import ZipFile
+from csv import writer
 from ._constants import *
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,9 @@ class Downloader:
         self._sec_files_headers = self._construct_sec_files_headers()
         self._sec_xbrl_api_headers = self._construct_sec_xbrl_api_headers()
         self._lookuptable_ticker_cik = self._load_or_update_lookuptable_ticker_cik()
+        self._checked_index_creation = False
+        self._base_index_path = self.root_path / "index" / "base_index"
+        self._file_num_index_path = self.root_path / "index" / "file_num_index"
     
     def _prepare_root_path(self, path, create_folder=True):
         if not isinstance(path, Path) and isinstance(path, str):
@@ -135,6 +139,7 @@ class Downloader:
         want_amendments: bool = True,
         skip_not_prefered_extension: bool = False,
         save: bool = True,
+        create_index = True,
         resolve_urls: bool = True,
         callback = None):
         '''download filings.
@@ -179,14 +184,18 @@ class Downloader:
             h, prefered_file_type, skip_not_prefered_extension) for h in base_meta]
         
         for m in base_metas:
+            # check if file is in index, if so check if it actually exists,
+            #  if both are true skip and log the skipped file and this reason
             file = self._download_filing(m)
             if resolve_urls and Path(m["save_name"]).suffix == "htm":
                 file = self._resolve_relative_urls(file, m)
             if save is True:
                 if file:
-                    self._save_filing(ticker_or_cik, m, file)
+                    self._save_filing(m, file)
                 else:
                     logger.debug("didnt save filing despite that it should have.")
+                if create_index is True:
+                    self._create_indexes(m)
             if callback != None:
                 callback({"file": file, "meta": m})           
         return
@@ -459,15 +468,55 @@ class Downloader:
             base_meta["save_name"] = Path(base_meta["file_url"]).name
         filing = resp.content if resp.content else None
         return filing
+    
+    def _create_indexes(self, base_meta):
+        if self._checked_index_creation is False:
+            if not self._base_index_path.exists():
+                self._base_index_path.mkdir(parents=True)
+            if not self._file_num_index_path.exists():
+                self._file_num_index_path.mkdir(parents=True)
+            self._checked_index_creation = True
+        base_path = self._get_base_index_path(base_meta["cik"])
+        film_num_path = self._get_file_num_index_path(base_meta["cik"])
+        base_path_row = 
+        film_num_row = 
+        #  try to append, otherwise create and write row, 
+        # and check if accn exists already 
+        # (how much overhead does the check generate, 
+        #   might be smarter to check after a while 
+        #   and just delete duplicates? shouldnt get any 
+        #   duplicates in the first place if i check the file location 
+        #   before download -> is it superflous to check it twice?)
+        try:
+            with open(base_path, "a") as f:
+
+                
+            
+            
+        # create and add entries to indices
+        # add a check index_integrity function to check for missing files
 
 
-    def _save_filing(self, ticker_or_cik, base_meta, file):
+        
+    
+    def _get_base_index_path(self, cik):
+        return self._base_index_path / (str(cik)+".csv")
+    
+    def _get_file_num_index_path(self, cik):
+        return self._film_num_index_path / (str(cik)+".json")
+    
+    def _get_filing_save_path(self, ticker_or_cik, form_type, accn, file_name):
+        # how to handle extracted zip files?
+        return (self.root_path / ticker_or_cik / form_type / accn / file_name)
+
+    def _save_filing(self, base_meta, file):
+        # save by cik and add searching folders by ticker in query class
         '''save the filing and extract zips.'''
-        save_path = (self.root_path 
-                    /ticker_or_cik
-                    /base_meta["form_type"]
-                    /base_meta["accession_number"]
-                    /base_meta["save_name"])
+        save_path = self._get_filing_save_path(
+                     base_meta["cik"]
+                    ,base_meta["form_type"]
+                    ,base_meta["accession_number"]
+                    ,base_meta["save_name"])
         save_path.parent.mkdir(parents=True, exist_ok=True)
         save_path.write_bytes(file)
         logger.debug(f"saved file to: {save_path}")
@@ -548,6 +597,7 @@ class Downloader:
         accession_number, filing_details_filename = hit["_id"].split(":", 1)
         accession_number_no_dash = accession_number.replace("-", "", 2)
         cik = hit["_source"]["ciks"][-1]
+        film_num = hit["_source"]["film_num"]
         submission_base_url = urljoin(urljoin(EDGAR_ARCHIVES_BASE_URL, cik),(accession_number_no_dash))
         xsl = hit["_source"]["xsl"] if hit["_source"]["xsl"] else None
         return {
@@ -556,7 +606,8 @@ class Downloader:
             "cik": cik,
             "base_url": submission_base_url,
             "main_file_name": filing_details_filename,
-            "xsl": xsl}
+            "xsl": xsl,
+            "file_num": film_num }
    
 
     def _json_from_search_api(
