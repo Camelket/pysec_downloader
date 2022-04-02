@@ -33,4 +33,13 @@ no tests at the moment.
 
     other_file = dl.get_file_company_tickers()
 
+    # calling get_bulk_submissions downloads >10GB of files
+    dl.get_bulk_submissions()
+    # if you dont know the cik call dl._convert_to_cik10(ticker) to get it
+    # check if S-3's were filed after "2020-01-01" and get the info to donwload them
+    newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
+    for key, values in newfiles.items():
+        for v in values:
+            dl.get_filing_by_accession_number(key, *v)
+
 
