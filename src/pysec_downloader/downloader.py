@@ -35,7 +35,7 @@ from os import path
 from urllib.parse import urlparse
 from zipfile import ZipFile
 from csv import writer
-from _constants import *
+from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
