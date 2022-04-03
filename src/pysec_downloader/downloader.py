@@ -35,7 +35,7 @@ from os import path
 from urllib.parse import urlparse
 from zipfile import ZipFile
 from csv import writer
-from ._constants import *
+from _constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -326,7 +326,7 @@ class Downloader:
         base_url = urljoin(EDGAR_ARCHIVES_BASE_URL, cik)
         file_url = urljoin(base_url, accession_number, save_name)
         logger.debug(f"file_url: {file_url}")
-        file = self._download_filing(file_url, save_name, skip=False, fallback_url=None)
+        file, _ = self._download_filing(file_url, skip=False, fallback_url=None)
         if Path(save_name).suffix == "htm":
             file = self._resolve_relative_urls(file, base_url)
         if save is True:
@@ -401,16 +401,16 @@ class Downloader:
         for m in base_metas:
             # check if file is in index, if so check if it actually exists,
             #  if both are true skip and log the skipped file and this reason
-            file = self._download_filing(m["file_url"], m["save_name"], m["skip"], m["fallback_url"])
-            if resolve_urls and Path(m["save_name"]).suffix == "htm":
-                file = self._resolve_relative_urls(file, m)
+            file, save_name = self._download_filing(m["file_url"], m["skip"], m["fallback_url"])
+            if resolve_urls and Path(save_name).suffix == ".htm":
+                file = self._resolve_relative_urls(file, m["base_url"])
             if save is True:
                 if file:
-                    self._save_filing(m["cik"], m["form_type"], m["accession_number"], m["save_name"], file, extract_zip=extract_zip)
+                    self._save_filing(m["cik"], m["form_type"], m["accession_number"], save_name, file, extract_zip=extract_zip)
                     if create_index is True:
                         file_nums = m["file_num"]
                         for file_num in file_nums:
-                            self.index_handler._create_indexes(m["cik"], m["form_type"], m["accession_number"], m["save_name"], file_num, m["filing_date"])
+                            self.index_handler._create_indexes(m["cik"], m["form_type"], m["accession_number"], save_name, file_num, m["filing_date"])
                 else:
                     logger.debug("didnt save/get filing despite that it should have. file was None")                
             if callback != None:
@@ -664,11 +664,11 @@ class Downloader:
             raise ValueError("Didnt get content returned from get_file_company_tickers")
         return
 
-    def _download_filing(self, file_url, save_name, skip, fallback_url=None):
-        '''download a file and fallback on secondary url if 404. adds save_name to base_meta'''
+    def _download_filing(self, file_url, skip, fallback_url=None):
+        '''download a file and fallback on secondary url if 404. returns filing, save_name'''
         logger.debug((f"called _download_filing with args: {locals()}"))
         if file_url is None and skip is True:
-            return
+            return None, None
         headers = self._sec_files_headers
         try:
             resp = self._get(url=file_url, headers=headers)
@@ -680,13 +680,13 @@ class Downloader:
                     # tried to get the prefered filetype but no file was found,
                     # so skip it according to "skip_not_prefered_extension"
                     logger.debug("skipping {}", locals())
-                    return
+                    return None, None
                 resp = self._get(url=fallback_url, headers=headers)
                 save_name = Path(fallback_url).name if isinstance(fallback_url, str) else fallback_url.name
         else:
             save_name = Path(file_url).name if isinstance(file_url, str) else file_url.name
         filing = resp.content if resp.content else None
-        return filing
+        return filing, save_name
     
     
 
@@ -907,3 +907,5 @@ class Downloader:
         return session
 
 
+dl = Downloader(r"C:\Users\Olivi\Testing\pysec_test")
+dl.get_filings("HYMC", "8-K", number_of_filings=10)
