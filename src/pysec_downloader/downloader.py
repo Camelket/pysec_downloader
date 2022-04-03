@@ -905,7 +905,3 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-
-
-dl = Downloader(r"C:\Users\Olivi\Testing\pysec_test")
-dl.get_filings("HYMC", "8-K", number_of_filings=10)
