@@ -33,7 +33,7 @@ from posixpath import join as urljoin
 from pathlib import Path
 from os import path
 from urllib.parse import urlparse
-from zipfile import ZipFile
+from zipfile import BadZipFile, ZipFile
 from csv import writer
 from ._constants import *
 
@@ -338,7 +338,6 @@ class Downloader:
                 else:
                     logger.debug("didnt save/get filing despite that it should have. file was None")
         
-        pass
 
     def get_filings(
         self,
@@ -479,10 +478,14 @@ class Downloader:
             if save_path.exists() and save_path.is_file():
                 save_path.unlink()
             save_path.write_bytes(resp)
-            extract_path = self.root_path / "companyfacts"   
-            with ZipFile(save_path, "r") as z:
-                z.extractall(extract_path)
-            save_path.unlink()
+            extract_path = self.root_path / "companyfacts"
+            try:   
+                with ZipFile(save_path, "r") as z:
+                    z.extractall(extract_path)
+            except BadZipFile as e:
+                logger.debug(f"zipfile info: {save_path.stat()}. \n somehow got a bad zipfile, make sure connection is stable")
+            finally:    
+                save_path.unlink()
         else:
             save_path = self.root_path / "companyfacts.zip"
             save_path.write_bytes(resp)
