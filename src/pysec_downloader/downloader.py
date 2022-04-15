@@ -43,6 +43,8 @@ logging.basicConfig(level=logging.DEBUG)
 debug = False
 if debug is True:
     logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
     
 
 r'''download interface for various SEC files.
@@ -119,6 +121,7 @@ class IndexHandler:
         Args:
             path: str or pathlike object
             after: format yyyy-mm-dd
+            tracked_filings: set of form types, eg: set(["S-3", "S-1"])
         '''
         if len(cik) < 10:
             cik = cik.zfill(10)
@@ -305,6 +308,8 @@ class Downloader:
         self._sec_xbrl_api_headers = self._construct_sec_xbrl_api_headers()
         self._lookuptable_ticker_cik = self._load_or_update_lookuptable_ticker_cik()
         self.index_handler = IndexHandler(root_path)
+        self._download_counter = 0
+        self._current_ticker = None
         
     
     def _prepare_root_path(self, path, create_folder=True):
@@ -373,6 +378,10 @@ class Downloader:
             callback: pass a function that expects a dict of {"file": file, "meta": meta}
                       meta includes the metadata.
         '''
+        # set these for info at end
+        self._current_ticker = ticker_or_cik
+        self._download_counter = 0
+
         ticker_or_cik = self._convert_to_cik10(ticker_or_cik)
         if prefered_file_type == (None or ""):
             if form_type not in PREFERED_FILE_TYPE_MAP.keys():
@@ -413,7 +422,8 @@ class Downloader:
                 else:
                     logger.debug("didnt save/get filing despite that it should have. file was None")                
             if callback != None:
-                callback({"file": file, "meta": m})           
+                callback({"file": file, "meta": m})
+        logger.info(f"Ticker: {self._current_ticker}, Downloads: {self._download_counter}, Form: {form_type}")           
         return
     
 
@@ -483,7 +493,7 @@ class Downloader:
                 with ZipFile(save_path, "r") as z:
                     z.extractall(extract_path)
             except BadZipFile as e:
-                logger.debug(f"zipfile info: {save_path.stat()}. \n somehow got a bad zipfile, make sure connection is stable")
+                logger.info(f"zipfile info: {save_path.stat()}. \n somehow got a bad zipfile, make sure connection is stable")
             finally:    
                 save_path.unlink()
         else:
@@ -689,6 +699,7 @@ class Downloader:
         else:
             save_name = Path(file_url).name if isinstance(file_url, str) else file_url.name
         filing = resp.content if resp.content else None
+        self._download_counter += 1
         return filing, save_name
     
     
@@ -699,7 +710,7 @@ class Downloader:
     
     def _get_filing_save_path(self, ticker_or_cik, form_type, accn, file_name):
         # how to handle extracted zip files?
-        return (self.root_path / ticker_or_cik / form_type / accn / file_name)
+        return (self.root_path / "filings" / ticker_or_cik / form_type / accn / file_name)
 
     def _save_filing(self, cik, form_type, accession_number, save_name, file, extract_zip=False):
         # save by cik and add searching folders by ticker in query class
@@ -845,7 +856,7 @@ class Downloader:
                 break
 
             if result["hits"]["hits"] == []:
-                logger.debug(f"[{ticker_or_cik}:{form_type}] -> No filings found for this combination")
+                logger.info(f"[{ticker_or_cik}:{form_type}] -> No filings found for this combination")
                 break
             
             for res in result["hits"]["hits"]:
@@ -857,11 +868,16 @@ class Downloader:
                 # make sure that no wrong filing type is added
                 if (not is_amendment) and (res_form_type != form_type):
                     continue
+                # make sure to only get filings after date and before date
+                # assuming that all entries are ordered descending by time
+                if (after_date != "") and (res["_source"]["file_date"] < after_date):
+                    break
+                if (before_date != "") and (res["_source"]["file_date"] > before_date):
+                    break
                 gathered_responses.append(res)
 
             query_size = result["query"]["size"]
             start_index += query_size
-
         return gathered_responses[:number_of_filings]
     
     def _rate_limit(func):
@@ -908,3 +924,4 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
