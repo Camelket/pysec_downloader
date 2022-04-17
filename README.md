@@ -28,6 +28,9 @@ no tests at the moment.
         want_amendments=False,
         skip_not_prefered_extension=True,
         save=True)
+    
+    # if the number_of_filings is large you might consider using get_filings_bulk() instead
+    # of get_filings()
 
     file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent") 
 

@@ -265,8 +265,41 @@ class IndexHandler:
             json.dump(content, f)
         
                 
-        # add a check index_integrity function to check for missing files present in index
-        # and remove duplicate entries in the base_index
+    def _create_indexes_bulk(self, cik:str, items: list[list]):
+        '''creates or adds all the entries in items to the indexes
+        
+        Args:
+            cik:  a central index key (10 character form/zfilled) eg: 0000234323
+            items: list of entries like so: [[form_type, accn, file_name, file_num, filing_date]] '''
+        base_path = self._get_base_index_path(cik)
+        file_num_path = self._get_file_num_index_path(cik)
+        file_num_content = None
+        try:
+            with open(file_num_path, "r") as num_file:
+                file_num_content = json.load(num_file)
+        except FileNotFoundError:
+            file_num_content = {}
+        with open(base_path, "a", newline="") as base_file:
+            if base_path.stat().st_size == 0:
+                base_header = ["form_type", "file_number", "file_path", "filing_date"]
+                writer(base_file).writerow(base_header)
+            for item in items:
+                rel_file_path = path.join(cik, item[0], item[1], item[2])
+                base_path_row = [item[0], item[1], rel_file_path, item[4]]
+                file_num_row = [item[0], rel_file_path, item[4]]
+                writer(base_file).writerow(base_path_row)
+                try:
+                    file_num_content[item[1]].append(file_num_row)
+                except KeyError:
+                    file_num_content[item[1]] = []
+                    file_num_content[item[1]].append(file_num_row)
+        with open(file_num_path, "w") as num_file:
+            json.dump(file_num_content, num_file)
+        
+                
+
+
+        
     
     def _get_base_index_path(self, cik):
         return self._base_index_path / (str(cik)+".csv")
@@ -344,6 +377,100 @@ class Downloader:
                     logger.debug("didnt save/get filing despite that it should have. file was None")
         
 
+    def get_filings_bulk(
+        self,
+        ticker_or_cik: str,
+        form_type: str,
+        after_date: str = "",
+        before_date: str = "",
+        query: str = "",
+        prefered_file_type: str = "",
+        number_of_filings: int = 100,
+        want_amendments: bool = True,
+        skip_not_prefered_extension: bool = False,
+        save: bool = True,
+        extract_zip = True,
+        create_index = True,
+        resolve_urls: bool = True,
+        callback = None):
+        '''download filings.  EXPERIMENTAL.
+
+        unlike get_filings this will write to the indexes in bulk after downloading
+        all of the files, usefull if you want to download a lot of files in one go
+        and reduce the time loss associated with open/closing the base index and
+        rewritting the file_num index every time.
+        
+        Args:
+            ticker_or_cik: either a ticker symbol "AAPL" or a 10digit cik
+            form_type: what form you want. valid forms are found in SUPPORTED_FILINGS
+            after_date: date after which to consider filings
+            before_date: date before which to consider filings
+            query: query according to https://www.sec.gov/edgar/search/efts-faq.html.
+            prefered_file_type: what filetype to prefer when looking for filings, see PREFERED_FILE_TYPES for handled extensions
+            number_of_filings: how many filings to download.
+            want_amendements: if we want to include amendment files or not
+            skip_not_prefered_extension: either download or exclude if prefered_file_type
+                               fails to match/download
+            save: toggles saving the files downloaded.
+            resolve_url: resolves relative urls to absolute ones in "htm"/"html" files 
+            callback: pass a function that expects a dict of {"file": file, "meta": meta}
+                      meta includes the metadata.
+        '''
+        # set these for info at end
+        self._current_ticker = ticker_or_cik
+        self._download_counter = 0
+
+        cik10 = self._convert_to_cik10(ticker_or_cik)
+        if prefered_file_type == (None or ""):
+            if form_type not in PREFERED_FILE_TYPE_MAP.keys():
+                logger.info(f"No Default file_type set for this form_type: {form_type}. defaulting to 'htm'")
+                prefered_file_type = "htm"
+            else:
+                prefered_file_type = PREFERED_FILE_TYPE_MAP[form_type] 
+                                
+        logger.debug((f"\n Called get_filings with args: {locals()}"))
+        hits = self._json_from_search_api(
+            ticker_or_cik=cik10,
+            form_type=form_type,
+            number_of_filings=number_of_filings,
+            want_amendments=want_amendments,
+            after_date=after_date,
+            before_date=before_date,
+            query=query)
+        if not hits:
+            logger.debug("returned without downloading because hits was None")
+            return
+        base_meta = [self._get_base_metadata_from_hit(h) for h in hits]
+        base_metas = [self._guess_full_url(
+            h, prefered_file_type, skip_not_prefered_extension) for h in base_meta]
+        
+        index_entries = [] # [[form_type, accn, file_name, file_num, filing_date], [...], ...]
+        for m in base_metas:
+            # check if file is in index, if so check if it actually exists,
+            #  if both are true skip and log the skipped file and this reason
+            file, save_name = self._download_filing(m["file_url"], m["skip"], m["fallback_url"])
+            if resolve_urls and Path(save_name).suffix == ".htm":
+                file = self._resolve_relative_urls(file, m["base_url"])
+            if save is True:
+                if file:
+                    self._save_filing(m["cik"], m["form_type"], m["accession_number"], save_name, file, extract_zip=extract_zip)
+                    if create_index is True:
+                        file_nums = m["file_num"]
+                        for file_num in file_nums:
+                            index_entries.append([m["form_type"], m["accession_number"], save_name, file_num, m["filing_date"]])
+                            # self.index_handler._create_indexes(m["cik"], m["form_type"], m["accession_number"], save_name, file_num, m["filing_date"])
+                else:
+                    logger.debug("didnt save/get filing despite that it should have. file was None")                
+            if callback != None:
+                callback({"file": file, "meta": m})
+        try:
+            self.index_handler._create_indexes_bulk(cik10, index_entries)
+        except Exception as e:
+            logger.debug(("undhandled exception in get_filings trying to create the index entries in bulk", e))
+            raise e
+        logger.info(f"Ticker: {self._current_ticker}, Downloads: {self._download_counter}, Form: {form_type}")           
+        return
+    
     def get_filings(
         self,
         ticker_or_cik: str,
@@ -382,7 +509,7 @@ class Downloader:
         self._current_ticker = ticker_or_cik
         self._download_counter = 0
 
-        ticker_or_cik = self._convert_to_cik10(ticker_or_cik)
+        cik10 = self._convert_to_cik10(ticker_or_cik)
         if prefered_file_type == (None or ""):
             if form_type not in PREFERED_FILE_TYPE_MAP.keys():
                 logger.info(f"No Default file_type set for this form_type: {form_type}. defaulting to 'htm'")
@@ -392,7 +519,7 @@ class Downloader:
                                 
         logger.debug((f"\n Called get_filings with args: {locals()}"))
         hits = self._json_from_search_api(
-            ticker_or_cik=ticker_or_cik,
+            ticker_or_cik=cik10,
             form_type=form_type,
             number_of_filings=number_of_filings,
             want_amendments=want_amendments,
@@ -856,7 +983,8 @@ class Downloader:
                 break
 
             if result["hits"]["hits"] == []:
-                logger.info(f"[{ticker_or_cik}:{form_type}] -> No filings found for this combination")
+                if len(gathered_responses) == 0:
+                    logger.info(f"[{ticker_or_cik}:{form_type}] -> No filings found for this combination")
                 break
             
             for res in result["hits"]["hits"]:
@@ -888,8 +1016,8 @@ class Downloader:
             if self._is_ratelimiting is False:
                 return func(self, *args, **kwargs)
             time.sleep(
-                max(0, self._next_try_systime_ms - self._get_systime_ms()
-                ) / 1000) 
+                max(0, ((self._next_try_systime_ms - self._get_systime_ms()
+                ) / 1000) ))
             result = func(self, *args, **kwargs)
             self._next_try_systime_ms = self._get_systime_ms(
             ) + SEC_RATE_LIMIT_DELAY 
