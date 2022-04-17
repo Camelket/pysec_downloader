@@ -12,7 +12,7 @@ SEC_FILES_COMPANY_TICKERS_EXCHANGES = "https://www.sec.gov/files/company_tickers
 #INTERNAL FILE LOCATION
 # change paths if pysec downloader is changed to separate project?
 TICKERS_CIK_FILE = "./resources/company_tickers.json"
-SEC_RATE_LIMIT_DELAY = 11 #ms
+SEC_RATE_LIMIT_DELAY = 110 #ms
 PREFERED_FILE_TYPE_MAP = {
     "S-1": "htm",
     "S-3": "htm",

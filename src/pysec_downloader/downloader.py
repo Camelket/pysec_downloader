@@ -823,6 +823,8 @@ class Downloader:
                     return None, None
                 resp = self._get(url=fallback_url, headers=headers)
                 save_name = Path(fallback_url).name if isinstance(fallback_url, str) else fallback_url.name
+            else:
+                logger.info(("unhandled HTTPError", e), exc_info=True)
         else:
             save_name = Path(file_url).name if isinstance(file_url, str) else file_url.name
         filing = resp.content if resp.content else None

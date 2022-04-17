@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: pysec-downloader
-Version: 0.0.25
+Version: 0.0.27
 Summary: sec/edgar file downloader
 Home-page: https://github.com/Camelket/pysec_downloader
 Author: camelket
@@ -45,6 +45,9 @@ no tests at the moment.
         want_amendments=False,
         skip_not_prefered_extension=True,
         save=True)
+    
+    # if the number_of_filings is large you might consider using get_filings_bulk() instead
+    # of get_filings()
 
     file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent") 
 
