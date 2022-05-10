@@ -35,7 +35,7 @@ from os import path
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 from csv import writer
-from datetime import utcnow
+from datetime import datetime
 from ._constants import *
 
 logger = logging.getLogger(__name__)
@@ -700,7 +700,7 @@ class Downloader:
         after_2021q2 = "files/investment"
         before_2021q2 = "divisions/investment/13f"
         if (year is None) and (quarter is None):
-            now = utcnow()
+            now = datetime.utcnow()
             year = int(now.year)
             month = int(now.month)
             if (0 < month < 4):
