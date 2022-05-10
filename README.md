@@ -44,5 +44,10 @@ no tests at the moment.
     for key, values in newfiles.items():
         for v in values:
             dl.get_filing_by_accession_number(key, *v)
-
+    
+    # download the most current 13f securities pdf
+    dl.get_13f_securities_pdf(path_to/save_as.pdf)
+    # get a byte reprensentation of the pdf without saving it
+    dl.get_13f_securities_pdf(target_path=None)
+    # easy way to convert the 13f securities pdf into a usuable dataframe/list -> tabula-py: https://github.com/chezou/tabula-py
 
