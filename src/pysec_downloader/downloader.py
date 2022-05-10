@@ -35,6 +35,7 @@ from os import path
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 from csv import writer
+from datetime import utcnow
 from ._constants import *
 
 logger = logging.getLogger(__name__)
@@ -295,11 +296,7 @@ class IndexHandler:
                     file_num_content[item[1]].append(file_num_row)
         with open(file_num_path, "w") as num_file:
             json.dump(file_num_content, num_file)
-        
-                
-
-
-        
+              
     
     def _get_base_index_path(self, cik):
         return self._base_index_path / (str(cik)+".csv")
@@ -685,6 +682,58 @@ class Downloader:
             logger.error("Couldnt fetch company_ticker_exchange.json file. got: {}", content)
         return content
 
+    def get_13f_securities_pdf(self, target_path: str, year: int=None, quarter: int=None):
+        '''gets the pdf of the 13f securities, contains cusip number, issuer, issuer 
+        description (class of security (+ expiration/maturity in some cases)), status.
+        
+        Args:
+            target_path: either folder to save the file in or a absolut path to 
+                        a .pdf file as which to save the downloaded pdf
+            year: year of pdf to fetch, dont set if you want most current pdf
+            quarter: quarter of pdf to fetch, dont set if you want most current pdf
+
+        Raises:
+            AttributeError: if a correct url couldnt be constructed from the given paramters
+             '''
+        base_url = "https://www.sec.gov"
+        constant_prefix = "13flist"
+        after_2021q2 = "files/investment"
+        before_2021q2 = "divisions/investment/13f"
+        if (year is None) and (quarter is None):
+            now = utcnow()
+            year = int(now.year)
+            month = int(now.month)
+            if (0 < month < 4):
+                quarter = 1
+            elif (3 < month < 7):
+                quarter = 2
+            elif (6 < month < 10):
+                quarter = 3
+            elif (9 < month <= 12):
+                quarter = 4
+        url_affix = constant_prefix + str(year) + "q" + str(quarter) + ".pdf"
+        if ((year == 2021) and (quarter >= 2)) or (year > 2021):
+            url_to_file = urljoin(urljoin(base_url, after_2021q2), url_affix)
+        else:
+            url_to_file = urljoin(urljoin(base_url, before_2021q2), url_affix)
+        if not url_to_file:
+            raise AttributeError
+        headers = {
+            "User-Agent": self.user_agent,
+            "Accept-Encoding": "gzip, deflate",
+            "Host": "www.sec.gov"
+        }
+        resp = self._get(url=url_to_file, headers=headers)
+        if target_path is None:
+            return resp.content
+        else:
+            if Path(target_path).suffix == ".pdf":
+                Path(target_path).write_bytes(resp.content)
+            else:
+                (Path(target_path) / url_affix).write_bytes(resp.content)         
+
+
+
       
     def lookup_cik(self, ticker: str) -> str:
         '''look up the corresponding CIK for ticker and return it or an exception.
@@ -1054,4 +1103,7 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+dl = Downloader(r"C:\Users\Olivi\Desktop\test_set", user_agent="max mustermann max@gmail.com")
+dl.get_13f_securities_pdf(r"C:\Users\Olivi\Desktop\test_set", year=2021, quarter=1)
 
