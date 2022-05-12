@@ -14,7 +14,7 @@ Features:
 no tests at the moment.
 
 ## usage:
-! make sure you have needed permission for the root_path
+Make sure you have needed permission for the root_path!
 
 ```python
 # instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
@@ -32,11 +32,9 @@ dl.get_filings(
 
 # if the `number_of_filings` is large you might consider using `get_filings_bulk()` 
 # instead of `get_filings()` for a more efficent index creation.
-```
 
-```python
 # get Facts (individual values) from a single Concept ("AccountPayableCurrent") of a Taxonomy ("us-gaap")
-file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent")
+facts_file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent")
 
 # download the zip containing all information on submissions of every company and extract it
 # Calling `get_bulk_submissions` or `get_bulk_companyfacts` downloads >10GB of files!
@@ -45,30 +43,28 @@ dl.get_bulk_submissions()
 # get the company-ticker map/file 
 other_file = dl.get_file_company_tickers()
 
-```
 
-
-
-
-```python
 # download the most current 13f securities pdf
 dl.get_13f_securities_pdf(path_to/save_as.pdf)
 # get a byte reprensentation of the pdf without saving it
 dl.get_13f_securities_pdf(target_path=None)
-# easy way to convert the 13f securities pdf into a usuable dataframe/list -> tabula-py: https://github.com/chezou/tabula-py
 ```
+easy way to convert the 13f securities pdf into a usuable dataframe/list -> [tabula-py](https://github.com/chezou/tabula-py)
+
 
 ```python
-# If you dont know the CIK call `dl._convert_to_cik10(ticker)` to get it
 # check if S-3's were filed after "2020-01-01", get the submission info and donwload them.
+
 newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
 for key, values in newfiles.items():
     for v in values:
         dl.get_filing_by_accession_number(key, *v)
+# If you dont know the CIK call `dl._convert_to_cik10(ticker)` to get it
 
 # check the index for none existing files and remove the entries from the index
 dl.index_handler.check_index()
 
-# get other index entry of downloaded filings with the same file number
-dl.index_handler.get_related_filings("0001718405", )
+# get index entry of downloaded filings with the same file number
+dl.index_handler.get_related_filings("some cik", "some file number")
+
 ```
