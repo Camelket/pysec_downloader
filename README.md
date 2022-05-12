@@ -5,7 +5,7 @@
     
     pip install pysec_downloader
     
-
+Features:
  supports most filings, needs a lot of refining still.
  exposes some of the sec xbrl api.
  self updating lookup table for ticker:cik so we can search xbrl api with ticker instead of only cik.
@@ -17,6 +17,7 @@ no tests at the moment.
 ! make sure you have needed permission for the root_path
 
 ```python
+# instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
 dl = Downloader(r"C:\Users\Download_Folder", user_agent="john smith js@test.com")
 dl.get_filings(
     ticker_or_cik="AAPL",
@@ -28,32 +29,46 @@ dl.get_filings(
     want_amendments=False,
     skip_not_prefered_extension=True,
     save=True)
+
+# if the `number_of_filings` is large you might consider using `get_filings_bulk()` 
+# instead of `get_filings()` for a more efficent index creation.
 ```
 
-if the `number_of_filings` is large you might consider using `get_filings_bulk()` instead of `get_filings()`
-
 ```python
+# get Facts (individual values) from a single Concept ("AccountPayableCurrent") of a Taxonomy ("us-gaap")
 file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent")
 
+# download the zip containing all information on submissions of every company and extract it
+# Calling `get_bulk_submissions` or `get_bulk_companyfacts` downloads >10GB of files!
+dl.get_bulk_submissions()
+
+# get the company-ticker map/file 
 other_file = dl.get_file_company_tickers()
+
 ```
 
-! calling `get_bulk_submissions` downloads >10GB of files
-`dl.get_bulk_submissions()`
 
 
-check if S-3's were filed after "2020-01-01" and get the info to donwload them
-! if you dont know the cik call `dl._convert_to_cik10(ticker)` to get it
+
 ```python
-newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
-for key, values in newfiles.items():
-    for v in values:
-        dl.get_filing_by_accession_number(key, *v)
-```
-download the most current 13f securities pdf
-```python
+# download the most current 13f securities pdf
 dl.get_13f_securities_pdf(path_to/save_as.pdf)
 # get a byte reprensentation of the pdf without saving it
 dl.get_13f_securities_pdf(target_path=None)
 # easy way to convert the 13f securities pdf into a usuable dataframe/list -> tabula-py: https://github.com/chezou/tabula-py
+```
+
+```python
+# If you dont know the CIK call `dl._convert_to_cik10(ticker)` to get it
+# check if S-3's were filed after "2020-01-01", get the submission info and donwload them.
+newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
+for key, values in newfiles.items():
+    for v in values:
+        dl.get_filing_by_accession_number(key, *v)
+
+# check the index for none existing files and remove the entries from the index
+dl.index_handler.check_index()
+
+# get other index entry of downloaded filings with the same file number
+dl.index_handler.get_related_filings("0001718405", )
 ```
