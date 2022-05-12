@@ -16,7 +16,7 @@ Sec information:
 
     
 Things to add:
-    * splitting a full text submission and writting individual files (will need to change how the indexes)
+    * splitting a full text submission and writting individual files (will need to change how the indexes work)
     
 
 
@@ -685,15 +685,19 @@ class Downloader:
     def get_13f_securities_pdf(self, target_path: str, year: int=None, quarter: int=None):
         '''gets the pdf of the 13f securities, contains cusip number, issuer, issuer 
         description (class of security (+ expiration/maturity in some cases)), status.
+        https://www.sec.gov/divisions/investment/13flists.htm
         
         Args:
             target_path: either folder to save the file in or a absolut path to 
-                        a .pdf file as which to save the downloaded pdf
+                        a .pdf file as which to save the downloaded pdf.
             year: year of pdf to fetch, dont set if you want most current pdf
             quarter: quarter of pdf to fetch, dont set if you want most current pdf
 
         Raises:
             AttributeError: if a correct url couldnt be constructed from the given paramters
+        
+        Returns:
+            Nothing or the response.content, if target_path is None.
              '''
         base_url = "https://www.sec.gov"
         constant_prefix = "13flist"
@@ -872,6 +876,8 @@ class Downloader:
                     return None, None
                 resp = self._get(url=fallback_url, headers=headers)
                 save_name = Path(fallback_url).name if isinstance(fallback_url, str) else fallback_url.name
+            else:
+                logger.info(("unhandled HTTPError", e), exc_info=True)
         else:
             save_name = Path(file_url).name if isinstance(file_url, str) else file_url.name
         filing = resp.content if resp.content else None
@@ -1101,7 +1107,4 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-
-dl = Downloader(r"C:\Users\Olivi\Desktop\test_set", user_agent="max mustermann max@gmail.com")
-dl.get_13f_securities_pdf(r"C:\Users\Olivi\Desktop\test_set", year=2021, quarter=1)
 
