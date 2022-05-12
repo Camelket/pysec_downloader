@@ -14,10 +14,11 @@ Features:
 no tests at the moment.
 
 ## usage:
-Make sure you have needed permission for the root_path!
+
 
 ```python
-# instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
+# Make sure you have needed permission for the root_path!
+# Instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
 dl = Downloader(r"C:\Users\Download_Folder", user_agent="john smith js@test.com")
 dl.get_filings(
     ticker_or_cik="AAPL",
@@ -53,7 +54,7 @@ easy way to convert the 13f securities pdf into a usuable dataframe/list -> [tab
 
 
 ```python
-# check if S-3's were filed after "2020-01-01", get the submission info and donwload them.
+# check if S-3's were filed after "2020-01-01", get the submission info and download them.
 
 newfiles = dl.index_handler.get_newer_filings_meta("0001718405", "2020-01-01", set(["S-3"]))
 for key, values in newfiles.items():
