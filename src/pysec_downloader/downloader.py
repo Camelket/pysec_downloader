@@ -1107,4 +1107,3 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-
