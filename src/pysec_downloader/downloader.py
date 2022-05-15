@@ -123,11 +123,16 @@ class IndexHandler:
             path: str or pathlike object
             after: format yyyy-mm-dd
             tracked_filings: set of form types, eg: set(["S-3", "S-1"])
+        
+        Returns:
+            dict[key:list]
+            where key is the CIK and list if of the form:
+                [form_type, accession_number, main_file_name, file_date, ?]
         '''
         if len(cik) < 10:
             cik = cik.zfill(10)
         path = self.root_path / "submissions" / ("CIK" + cik + ".json") 
-        new_filings = {}
+        new_filings = {cik: []}
         with open(path, "r") as f:
             j = json.load(f)
             stop_idx = None
@@ -142,11 +147,10 @@ class IndexHandler:
                         stop_idx = r
                         break
                 if stop_idx is not None:
-                    new_filings[j["cik"]] = []
                     filing = j["filings"]["recent"]
                     for idx in range(0, stop_idx, 1):
                         if (filing["form"][idx] in tracked_filings) or (tracked_filings is None):
-                            new_filings[j["cik"]].append(
+                            new_filings[cik].append(
                                [filing["form"][idx],
                                 filing["accessionNumber"][idx].replace("-", ""),
                                 filing["primaryDocument"][idx],
@@ -978,7 +982,7 @@ class Downloader:
         accession_number, filing_details_filename = hit["_id"].split(":", 1)
         accession_number_no_dash = accession_number.replace("-", "", 2)
         cik = hit["_source"]["ciks"][-1]
-        film_num = hit["_source"]["film_num"]
+        file_num = hit["_source"]["file_num"]
         submission_base_url = urljoin(urljoin(EDGAR_ARCHIVES_BASE_URL, cik),(accession_number_no_dash))
         xsl = hit["_source"]["xsl"] if hit["_source"]["xsl"] else None
         filing_date = hit["_source"]["file_date"]
@@ -989,7 +993,7 @@ class Downloader:
             "base_url": submission_base_url,
             "main_file_name": filing_details_filename,
             "xsl": xsl,
-            "file_num": film_num,
+            "file_num": file_num,
             "filing_date": filing_date}
    
 

@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: pysec-downloader
-Version: 0.0.30
+Version: 0.0.32
 Summary: sec/edgar file downloader
 Home-page: https://github.com/Camelket/pysec_downloader
 Author: camelket
