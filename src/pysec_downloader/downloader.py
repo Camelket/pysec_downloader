@@ -37,8 +37,7 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
-from _constants import *
-# from ._constants import *
+from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -95,43 +94,23 @@ class IndexHandler:
         self._base_index_path = self.root_path / "index" / "base_index"
         self._file_num_index_path = self.root_path / "index" / "file_num_index"
 
-    def _get_base_index_path(self, cik10):
-        return self._base_index_path / cik10 +".csv"
-    
-    def _get_file_num_index_path(self, cik10):
-        return self._file_num_index_path / cik10 +".json"
 
-    def _prepare_root_path(self, path, create_folder=True):
-        if not isinstance(path, Path) and isinstance(path, str):
-            path = Path(path)
-        if isinstance(path, Path):
-            if create_folder is True:
-                if not path.exists():
-                    path.mkdir(parents=True)
-            elif create_folder is False:
-                if not path.exists():
-                    raise OSError("root_path doesnt exist")
-            return path
-        else:
-            raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
     
     def get_local_filings_by_form_type(self, cik: str, form_type: str):
+        '''gets all the index entries of form_type and cik.
+        
+        Returns:
+            dict with keys: form_type, file_number, file_path, filing_date
+        '''
         index_path = self._get_base_index_path(cik)
         df = pd.read_csv(index_path)
+        df = df[df["form_type"] == form_type]
+        print(df)
         for row in df.iloc:       
             df.loc[row.name, ("file_path", )] = self._relative_to_absolute_filing_path(row["file_path"])
             df.loc[row.name, ("accession_number", )] = self._get_accession_number_from_relative_path(row["file_path"])
         return df.to_dict("records")
     
-    def _get_accession_number_from_relative_path(self, rel_path):
-        if isinstance(rel_path, str):
-            return str(Path(rel_path).parent.name).replace("-", "")
-        if isinstance(rel_path, Path):
-            return str(rel_path.parent.name).replace("-", "")
-        raise TypeError(f"rel_path should be of type str or pathlib.Path, got: {type(rel_path)}")
-    
-    def _relative_to_absolute_filing_path(self, rel_path):
-        return urljoin(self.root_path, rel_path)
 
     def get_newer_filings_meta(self, cik, after: str, tracked_filings: set = None):
         '''check a submission file and get filings newer than 'after'.
@@ -252,6 +231,36 @@ class IndexHandler:
         logger.info((f"completed check of indexes \n"
                      f"base_index: {base_remove_count} entries removed \n"
                      f"num_index: {num_remove_count} entries removed \n"))
+
+    def _get_base_index_path(self, cik10):
+        return self._base_index_path / cik10 +".csv"
+    
+    def _get_file_num_index_path(self, cik10):
+        return self._file_num_index_path / cik10 +".json"
+
+    def _prepare_root_path(self, path, create_folder=True):
+        if not isinstance(path, Path) and isinstance(path, str):
+            path = Path(path)
+        if isinstance(path, Path):
+            if create_folder is True:
+                if not path.exists():
+                    path.mkdir(parents=True)
+            elif create_folder is False:
+                if not path.exists():
+                    raise OSError("root_path doesnt exist")
+            return path
+        else:
+            raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
+
+    def _get_accession_number_from_relative_path(self, rel_path):
+        if isinstance(rel_path, str):
+            return str(Path(rel_path).parent.name).replace("-", "")
+        if isinstance(rel_path, Path):
+            return str(rel_path.parent.name).replace("-", "")
+        raise TypeError(f"rel_path should be of type str or pathlib.Path, got: {type(rel_path)}")
+    
+    def _relative_to_absolute_filing_path(self, rel_path):
+        return urljoin(self.root_path, rel_path)
     
     
     def _create_indexes(self, cik, form_type, accn, file_name, file_num, filing_date):
@@ -1131,6 +1140,3 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
-    
-dl = Downloader(r"C:\Users\Public\Desktop\sec_scraping_testsets\example_filing_set_100_companies")
-dl.index_handler.get_local_filings_by_form_type("0000704172", "8-K")
