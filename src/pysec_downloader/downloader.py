@@ -124,7 +124,11 @@ class IndexHandler:
         return df.to_dict("records")
     
     def _get_accession_number_from_relative_path(self, rel_path):
-        return str(Path(rel_path).parent.name).replace("-", "")
+        if isinstance(rel_path, str):
+            return str(Path(rel_path).parent.name).replace("-", "")
+        if isinstance(rel_path, Path):
+            return str(rel_path.parent.name).replace("-", "")
+        raise TypeError(f"rel_path should be of type str or pathlib.Path, got: {type(rel_path)}")
     
     def _relative_to_absolute_filing_path(self, rel_path):
         return urljoin(self.root_path, rel_path)
