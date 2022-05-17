@@ -36,7 +36,9 @@ from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
-from ._constants import *
+import pandas as pd
+from _constants import *
+# from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -112,6 +114,20 @@ class IndexHandler:
             return path
         else:
             raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
+    
+    def get_local_filings_by_form_type(self, cik: str, form_type: str):
+        index_path = self._get_base_index_path(cik)
+        df = pd.read_csv(index_path)
+        for row in df.iloc:       
+            df.loc[row.name, ("file_path", )] = self._relative_to_absolute_filing_path(row["file_path"])
+            df.loc[row.name, ("accession_number", )] = self._get_accession_number_from_relative_path(row["file_path"])
+        return df.to_dict("records")
+    
+    def _get_accession_number_from_relative_path(self, rel_path):
+        return str(Path(rel_path).parent.name).replace("-", "")
+    
+    def _relative_to_absolute_filing_path(self, rel_path):
+        return urljoin(self.root_path, rel_path)
 
     def get_newer_filings_meta(self, cik, after: str, tracked_filings: set = None):
         '''check a submission file and get filings newer than 'after'.
@@ -1111,3 +1127,6 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+    
+dl = Downloader(r"C:\Users\Public\Desktop\sec_scraping_testsets\example_filing_set_100_companies")
+dl.index_handler.get_local_filings_by_form_type("0000704172", "8-K")
