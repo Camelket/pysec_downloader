@@ -102,14 +102,16 @@ class IndexHandler:
         Returns:
             dict with keys: form_type, file_number, file_path, filing_date
         '''
-        index_path = self._get_base_index_path(cik)
-        df = pd.read_csv(index_path)
-        df = df[df["form_type"] == form_type]
-        print(df)
-        for row in df.iloc:       
-            df.loc[row.name, ("file_path", )] = self._relative_to_absolute_filing_path(row["file_path"])
-            df.loc[row.name, ("accession_number", )] = self._get_accession_number_from_relative_path(row["file_path"])
-        return df.to_dict("records")
+        df = self._get_base_index_as_dataframe(cik)
+        return df[df["form_type"] == form_type].to_dict("records")
+    
+    def get_local_filings_by_cik(self, cik: str):
+        '''gets all the index entries of this cik
+        
+        Returns:
+            dict with keys: form_Type, file_number, file_path, filing_date
+        '''
+        return self._get_base_index_as_dataframe(cik).to_dict("records")
     
 
     def get_newer_filings_meta(self, cik, after: str, tracked_filings: set = None):
@@ -179,10 +181,12 @@ class IndexHandler:
 
 
     def check_index(self):
-        '''check the index and remove none existant entries.
+        '''
+        check the index and remove none existant entries.
         
         check if files listed in the index are present and
-        if there are duplicate values in the base_index.'''
+        if there are duplicate values in the base_index.
+        Removes the duplicates and entries not present locally.'''
         # get all base indexes
         import pandas as pd
         base_indexes = [p for p in self._base_index_path.glob("*.csv")]
@@ -231,6 +235,15 @@ class IndexHandler:
         logger.info((f"completed check of indexes \n"
                      f"base_index: {base_remove_count} entries removed \n"
                      f"num_index: {num_remove_count} entries removed \n"))
+    
+    def _get_base_index_as_dataframe(self, cik: str):
+        '''get the index of cik as a dataframe with absolute file paths and the accession number added'''
+        index_path = self._get_base_index_path(cik)
+        df = pd.read_csv(index_path)
+        for row in df.iloc:       
+            df.loc[row.name, ("file_path", )] = self._relative_to_absolute_filing_path(row["file_path"])
+            df.loc[row.name, ("accession_number", )] = self._get_accession_number_from_relative_path(row["file_path"])
+        return df
 
     def _get_base_index_path(self, cik10):
         return self._base_index_path / cik10 +".csv"
