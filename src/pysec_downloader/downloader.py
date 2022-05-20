@@ -37,12 +37,14 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
-from ._constants import *
+from _constants import *
+# from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-debug = False
+debug = True
+# debug = False
 if debug is True:
     logger.setLevel(logging.DEBUG)
 else:
@@ -210,7 +212,8 @@ class IndexHandler:
                 num_index = json.load(file_num_index)
                 drop_rows = []
                 for row in df.iloc:
-                    if not (self.root_path / Path(row["file_path"])).exists():
+                    if not (self.root_path /  "filings" / Path(row["file_path"])).is_file():
+                        logger.debug(f"{(self.root_path / 'filings' / Path(row['file_path']))} didnt exist")
                         # remove entry from file_num_index
                         try:
                             num_obj = num_index[row["file_number"]]
@@ -1164,5 +1167,10 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+dl = Downloader(r"E:\test\sec_scraping\resources\datasets")
+# dl.get_filings("CEI", "8-K", after_date="2021-01-01", number_of_filings=10)
+# dl.get_filings("CEI", "DEF 14A", after_date="2021-01-01", number_of_filings=10)
+dl.index_handler.check_index()
 
 
