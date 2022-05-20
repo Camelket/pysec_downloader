@@ -37,14 +37,13 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
-from _constants import *
-# from ._constants import *
+from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
-debug = True
-# debug = False
+# debug = True
+debug = False
 if debug is True:
     logger.setLevel(logging.DEBUG)
 else:
@@ -100,7 +99,7 @@ class IndexHandler:
         self.root_path = self._prepare_root_path(root_path)
         self._checked_index_creation = False
         self._base_index_path = self.root_path / "index" / "base_index"
-        self._file_num_index_path = self.root_path / "index" / "file_num_index"
+        self._num_index_path = self.root_path / "index" / "file_num_index"
 
 
     
@@ -199,48 +198,52 @@ class IndexHandler:
         import pandas as pd
         base_indexes = [p for p in self._base_index_path.glob("*.csv")]
         base_remove_count = 0
+        num_indexes = [p for p in self._num_index_path.glob("*.json")]
         num_remove_count = 0
         for b in base_indexes:
+            base_changed = False
             original = pd.read_csv(b, delimiter=",")
             # remove duplicates
             df = original.drop_duplicates()
+            drop_rows = []
             # load the file_num_index
-            num_index_path = self._file_num_index_path / b.name.replace(".csv", ".json")
-            with open(num_index_path, "r+") as file_num_index:
-                num_changed =  False
-                base_changed = False
-                num_index = json.load(file_num_index)
-                drop_rows = []
-                for row in df.iloc:
-                    if not (self.root_path /  "filings" / Path(row["file_path"])).is_file():
-                        logger.debug(f"{(self.root_path / 'filings' / Path(row['file_path']))} didnt exist")
-                        # remove entry from file_num_index
-                        try:
-                            num_obj = num_index[row["file_number"]]
-                            drop_idx = None
-                            for idx, item in enumerate(num_obj):
-                                if item[1] == row["file_path"]:
-                                    drop_idx = idx
-                                    break
-                            if drop_idx:
-                                num_changed = True
-                                num_obj.pop(drop_idx)
-                                num_index[row["file_number"]] = num_obj
-                                num_remove_count += 1
-                        except KeyError as e:
-                            logger.debug(f"{e} when trying to remove entry from file_number_index, row in base_index: {row}")
+            for row in df.iloc:
+                if not (self.root_path /  "filings" / Path(row["file_path"])).is_file():
+                    logger.debug(f"{(self.root_path / 'filings' / Path(row['file_path']))} didnt exist")
+                    base_changed = True
+                    drop_rows.append(row.name)
+            if base_changed is True:
+                base_remove_count += len(drop_rows)
+                df = df.drop(drop_rows)
+                df.to_csv(b)
+                logger.debug(f"changed base_index: {b}")
 
-                        base_changed = True
-                        drop_rows.append(row.name)    
-                # remove invalid rows from dataframe/base_index and rewrite files if needed
-                if base_changed is True:
-                    base_remove_count += len(drop_rows)
-                    df = df.drop(drop_rows)
-                    df.to_csv(b)
-                    logger.debug(f"changed base_index: {b}")
-                    if num_changed is True:
-                        json.dump(num_index, file_num_index)
-                        logger.debug(f"changed file_num_index: {num_index_path}")
+        for n in num_indexes:
+            with open(n, "r+") as file_num_index:
+                num_changed =  False
+                num_index = json.load(file_num_index)
+                file_nums_to_remove = []
+                logger.debug(f"original num_index: {json.dumps(num_index, indent=2)}")
+                  # remove entry from file_num_index
+                for file_num in num_index.keys():
+                    offset = 0
+                    for idx, entry in enumerate(num_index[file_num]):
+                        if not (self.root_path / "filings" / Path(entry[1])).is_file():
+                            num_index[file_num].pop(idx - offset)
+                            offset += 1
+                            num_remove_count += 1
+                            num_changed = True
+                    if num_index[file_num] == []:
+                        file_nums_to_remove.append(file_num)
+                if file_nums_to_remove != []:
+                    for file_num_to_remove in file_nums_to_remove:
+                        del num_index[file_num_to_remove]
+
+            if num_changed is True:
+                with open(n, "w") as file_num_index:
+                    logger.debug(f"changed num_index: {json.dumps(num_index, indent=2)}")
+                    json.dump(num_index, file_num_index)
+                logger.debug(f"changed num_index: {n}")
         logger.info((f"completed check of indexes \n"
                      f"base_index: {base_remove_count} entries removed \n"
                      f"num_index: {num_remove_count} entries removed \n"))
@@ -258,7 +261,7 @@ class IndexHandler:
         return self._base_index_path / cik10 +".csv"
     
     def _get_file_num_index_path(self, cik10):
-        return self._file_num_index_path / cik10 +".json"
+        return self._num_index_path / cik10 +".json"
 
     def _prepare_root_path(self, path: str | Path, create_folder=True):
         if not isinstance(path, Path) and isinstance(path, str):
@@ -295,8 +298,8 @@ class IndexHandler:
         if self._checked_index_creation is False:
             if not self._base_index_path.exists():
                 self._base_index_path.mkdir(parents=True)
-            if not self._file_num_index_path.exists():
-                self._file_num_index_path.mkdir(parents=True)
+            if not self._num_index_path.exists():
+                self._num_index_path.mkdir(parents=True)
             self._checked_index_creation = True
         rel_file_path = path.join(cik, form_type, accn, file_name)
         base_path = self._get_base_index_path(cik)
@@ -361,7 +364,7 @@ class IndexHandler:
         return self._base_index_path / (str(cik)+".csv")
     
     def _get_file_num_index_path(self, cik):
-        return self._file_num_index_path / (str(cik)+".json")
+        return self._num_index_path / (str(cik)+".json")
     
 
 class Downloader:
@@ -1168,9 +1171,5 @@ class Downloader:
         session.mount("https://", adapter)
         return session
 
-dl = Downloader(r"E:\test\sec_scraping\resources\datasets")
-# dl.get_filings("CEI", "8-K", after_date="2021-01-01", number_of_filings=10)
-# dl.get_filings("CEI", "DEF 14A", after_date="2021-01-01", number_of_filings=10)
-dl.index_handler.check_index()
 
 
