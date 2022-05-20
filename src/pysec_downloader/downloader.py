@@ -29,6 +29,7 @@ from urllib3.util import Retry
 import time
 from functools import wraps
 import logging
+import pandas as pd
 from posixpath import join as urljoin
 from pathlib import Path
 from os import PathLike, path
@@ -195,58 +196,65 @@ class IndexHandler:
         if there are duplicate values in the base_index.
         Removes the duplicates and entries not present locally.'''
         # get all base indexes
-        import pandas as pd
         base_indexes = [p for p in self._base_index_path.glob("*.csv")]
         base_remove_count = 0
         num_indexes = [p for p in self._num_index_path.glob("*.json")]
         num_remove_count = 0
+
         for b in base_indexes:
-            base_changed = False
-            original = pd.read_csv(b, delimiter=",")
-            # remove duplicates
-            df = original.drop_duplicates()
-            drop_rows = []
-            # load the file_num_index
-            for row in df.iloc:
-                if not (self.root_path /  "filings" / Path(row["file_path"])).is_file():
-                    logger.debug(f"{(self.root_path / 'filings' / Path(row['file_path']))} didnt exist")
-                    base_changed = True
-                    drop_rows.append(row.name)
-            if base_changed is True:
-                base_remove_count += len(drop_rows)
-                df = df.drop(drop_rows)
-                df.to_csv(b)
-                logger.debug(f"changed base_index: {b}")
+            self._check_base_index_file(base_remove_count, b)
 
         for n in num_indexes:
-            with open(n, "r+") as file_num_index:
-                num_changed =  False
-                num_index = json.load(file_num_index)
-                file_nums_to_remove = []
-                logger.debug(f"original num_index: {json.dumps(num_index, indent=2)}")
-                  # remove entry from file_num_index
-                for file_num in num_index.keys():
-                    offset = 0
-                    for idx, entry in enumerate(num_index[file_num]):
-                        if not (self.root_path / "filings" / Path(entry[1])).is_file():
-                            num_index[file_num].pop(idx - offset)
-                            offset += 1
-                            num_remove_count += 1
-                            num_changed = True
-                    if num_index[file_num] == []:
-                        file_nums_to_remove.append(file_num)
-                if file_nums_to_remove != []:
-                    for file_num_to_remove in file_nums_to_remove:
-                        del num_index[file_num_to_remove]
-
-            if num_changed is True:
-                with open(n, "w") as file_num_index:
-                    logger.debug(f"changed num_index: {json.dumps(num_index, indent=2)}")
-                    json.dump(num_index, file_num_index)
-                logger.debug(f"changed num_index: {n}")
+            self._check_num_index_file(num_remove_count, n)
         logger.info((f"completed check of indexes \n"
                      f"base_index: {base_remove_count} entries removed \n"
                      f"num_index: {num_remove_count} entries removed \n"))
+
+    def _check_base_index_file(self, base_remove_count, b):
+        '''check if a file in the base index is missing and remove the entry if it is.'''
+        base_changed = False
+        original = pd.read_csv(b, delimiter=",")
+            # remove duplicates
+        df = original.drop_duplicates()
+        drop_rows = []
+            # load the file_num_index
+        for row in df.iloc:
+            if not (self.root_path /  "filings" / Path(row["file_path"])).is_file():
+                logger.debug(f"{(self.root_path / 'filings' / Path(row['file_path']))} didnt exist")
+                base_changed = True
+                drop_rows.append(row.name)
+        if base_changed is True:
+            base_remove_count += len(drop_rows)
+            df = df.drop(drop_rows)
+            df.to_csv(b)
+            logger.debug(f"changed base_index: {b}")
+
+    def _check_num_index_file(self, num_remove_count, n):
+        '''check if a file in the num index is missing and remove it if it is.'''
+        with open(n, "r+") as file_num_index:
+            num_changed =  False
+            num_index = json.load(file_num_index)
+            file_nums_to_remove = []
+            logger.debug(f"original num_index: {json.dumps(num_index, indent=2)}")
+                  # remove entry from file_num_index
+            for file_num in num_index.keys():
+                offset = 0
+                for idx, entry in enumerate(num_index[file_num]):
+                    if not (self.root_path / "filings" / Path(entry[1])).is_file():
+                        num_index[file_num].pop(idx - offset)
+                        offset += 1
+                        num_remove_count += 1
+                        num_changed = True
+                if num_index[file_num] == []:
+                    file_nums_to_remove.append(file_num)
+            if file_nums_to_remove != []:
+                for file_num_to_remove in file_nums_to_remove:
+                    del num_index[file_num_to_remove]
+        if num_changed is True:
+            with open(n, "w") as file_num_index:
+                logger.debug(f"changed num_index: {json.dumps(num_index, indent=2)}")
+                json.dump(num_index, file_num_index)
+            logger.debug(f"changed num_index: {n}")
     
     def _get_base_index_as_dataframe(self, cik: str):
         '''get the index of cik as a dataframe with absolute file paths and the accession number added'''
@@ -290,7 +298,6 @@ class IndexHandler:
             if (x != "\\") or (x != "/"):
                 p = path.join(p, x)
         return p
-    
     
     def _create_indexes(self, cik: str, form_type: str, accn: str, file_name: str, file_num: str, filing_date: str):
         # need to fix rewritting whole json every time, how could i use seek()?
