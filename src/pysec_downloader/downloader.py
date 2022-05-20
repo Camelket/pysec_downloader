@@ -31,7 +31,7 @@ from functools import wraps
 import logging
 from posixpath import join as urljoin
 from pathlib import Path
-from os import path
+from os import PathLike, path
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 from csv import writer
@@ -79,6 +79,12 @@ r'''download interface for various SEC files.
         for v in values:
             dl.get_filing_by_accession_number(key, *v)
     '''
+def _ensure_no_dash_accn(accn: str):
+    if len(accn) == 18:
+        return accn
+    else:
+        return accn.replace("-", "")
+
 
 class IndexHandler:
     '''create, add to and query the index for files donwloaded with Downloader
@@ -114,7 +120,7 @@ class IndexHandler:
         return self._get_base_index_as_dataframe(cik).to_dict("records")
     
 
-    def get_newer_filings_meta(self, cik, after: str, tracked_filings: set = None):
+    def get_newer_filings_meta(self, cik: str, after: str, tracked_filings: set = None):
         '''check a submission file and get filings newer than 'after'.
         
         only works if you have downloaded the bulk submissions file!
@@ -153,7 +159,7 @@ class IndexHandler:
                         if (filing["form"][idx] in tracked_filings) or (tracked_filings is None):
                             new_filings[cik].append(
                                [filing["form"][idx],
-                                filing["accessionNumber"][idx].replace("-", ""),
+                                _ensure_no_dash_accn(filing["accessionNumber"][idx]),
                                 filing["primaryDocument"][idx],
                                 filing["filingDate"][idx],
                                 [filing["fileNumber"][idx]]])
@@ -245,13 +251,13 @@ class IndexHandler:
             df.loc[row.name, ("accession_number", )] = self._get_accession_number_from_relative_path(row["file_path"])
         return df
 
-    def _get_base_index_path(self, cik10):
+    def _get_base_index_path(self, cik10: str):
         return self._base_index_path / cik10 +".csv"
     
     def _get_file_num_index_path(self, cik10):
         return self._file_num_index_path / cik10 +".json"
 
-    def _prepare_root_path(self, path, create_folder=True):
+    def _prepare_root_path(self, path: str | Path, create_folder=True):
         if not isinstance(path, Path) and isinstance(path, str):
             path = Path(path)
         if isinstance(path, Path):
@@ -265,18 +271,22 @@ class IndexHandler:
         else:
             raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
 
-    def _get_accession_number_from_relative_path(self, rel_path):
+    def _get_accession_number_from_relative_path(self, rel_path: str | Path):
         if isinstance(rel_path, str):
-            return str(Path(rel_path).parent.name).replace("-", "")
+            return _ensure_no_dash_accn(str(Path(rel_path).parent.name))
         if isinstance(rel_path, Path):
-            return str(rel_path.parent.name).replace("-", "")
+            return _ensure_no_dash_accn(str(rel_path.parent.name))
         raise TypeError(f"rel_path should be of type str or pathlib.Path, got: {type(rel_path)}")
     
-    def _relative_to_absolute_filing_path(self, rel_path):
-        return urljoin(self.root_path, rel_path)
+    def _relative_to_absolute_filing_path(self, rel_path: str):
+        p = str(self.root_path / "filings")
+        for x in Path(rel_path).parts:
+            if (x != "\\") or (x != "/"):
+                p = path.join(p, x)
+        return p
     
     
-    def _create_indexes(self, cik, form_type, accn, file_name, file_num, filing_date):
+    def _create_indexes(self, cik: str, form_type: str, accn: str, file_name: str, file_num: str, filing_date: str):
         # need to fix rewritting whole json every time, how could i use seek()?
         '''create index files or add to them. accession number is included in the file_path'''
         if self._checked_index_creation is False:
@@ -388,7 +398,7 @@ class Downloader:
         self._current_ticker = None
         
     
-    def _prepare_root_path(self, path, create_folder=True):
+    def _prepare_root_path(self, path: str | Path, create_folder=True):
         if not isinstance(path, Path) and isinstance(path, str):
             path = Path(path)
         if isinstance(path, Path):
@@ -402,7 +412,7 @@ class Downloader:
         else:
             raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
 
-    def get_filing_by_accession_number(self, cik, form_type, accession_number, save_name, filing_date, file_nums, save=True, create_index=True, extract_zip=True):
+    def get_filing_by_accession_number(self, cik: str, form_type: str, accession_number: str, save_name: str, filing_date: str, file_nums: str, save: bool=True, create_index: bool=True, extract_zip: bool=True):
         logger.debug(f"\n Called get_filing_by_accession_number with args: {locals()}")
         base_url = urljoin(EDGAR_ARCHIVES_BASE_URL, cik)
         file_url = urljoin(base_url, accession_number, save_name)
@@ -641,7 +651,7 @@ class Downloader:
         content = resp.json()
         return content
     
-    def get_bulk_companyfacts(self, extract=True):
+    def get_bulk_companyfacts(self, extract: bool=True):
         '''get all the companyfacts in one zip file (~1GB, extracted ~12GB)
         
         Args:
@@ -671,7 +681,7 @@ class Downloader:
             save_path.write_bytes(resp)
             
     
-    def get_bulk_submissions(self, extract=True):
+    def get_bulk_submissions(self, extract: bool=True):
         '''get a file of all the sec submissions for every company in one zip file
             (~1.2GB, extracted ~6GB)
         
@@ -903,7 +913,7 @@ class Downloader:
             raise ValueError("Didnt get content returned from get_file_company_tickers")
         return
 
-    def _download_filing(self, file_url, skip, fallback_url=None):
+    def _download_filing(self, file_url: str, skip: bool, fallback_url=None):
         '''download a file and fallback on secondary url if 404. returns filing, save_name'''
         logger.debug((f"called _download_filing with args: {locals()}"))
         if file_url is None and skip is True:
@@ -936,9 +946,9 @@ class Downloader:
         
     
     
-    def _get_filing_save_path(self, ticker_or_cik, form_type, accn, file_name):
-        # how to handle extracted zip files?
-        return (self.root_path / "filings" / ticker_or_cik / form_type / accn / file_name)
+    def _get_filing_save_path(self, ticker_or_cik: str, form_type: str, accn: str, file_name: str) -> str:
+        'constructs and returns save path for a filing'
+        return (self.root_path / "filings" / ticker_or_cik / form_type / _ensure_no_dash_accn(accn) / file_name)
 
     def _save_filing(self, cik, form_type, accession_number, save_name, file, extract_zip=False):
         # save by cik and add searching folders by ticker in query class
@@ -954,8 +964,9 @@ class Downloader:
         return
 
 
-    def _guess_full_url(self, base_meta, prefered_file_type, skip_not_prefered_extension):
-        '''infers the filename of a filing and adds it and
+    def _guess_full_url(self, base_meta: dict, prefered_file_type: str, skip_not_prefered_extension: bool) -> dict:
+        '''
+        infers the filename of a filing and adds it and
         a fallback to the base_meta dict. returns the changed base_meta dict
         '''
         # rethink this whole skip_not_prefered_extension thing -naming -usefulness -implementation
@@ -999,7 +1010,7 @@ class Downloader:
         return base_meta
     
     def _resolve_relative_urls(self, filing: str, base_url: str):
-        # soup content then resolve relative links and image locations
+        'changes relative to absolute urls.'
         soup = BeautifulSoup(filing)
         base = base_url
         for rurl in soup.find_all("a", href=True):
@@ -1016,13 +1027,13 @@ class Downloader:
     
 
     def _get_systime_ms(self):
-        return int(time.time() * SEC_RATE_LIMIT_DELAY)
+        return int(time.time() * 1000)
     
 
-    def _get_base_metadata_from_hit(self, hit: dict):
-        '''getting the most relevant information out of a entry. returning a dict'''
+    def _get_base_metadata_from_hit(self, hit: dict) -> dict:
+        '''gets the most relevant information out of a entry.'''
         accession_number, filing_details_filename = hit["_id"].split(":", 1)
-        accession_number_no_dash = accession_number.replace("-", "", 2)
+        accession_number_no_dash = _ensure_no_dash_accn(accession_number)
         cik = hit["_source"]["ciks"][-1]
         file_num = hit["_source"]["file_num"]
         submission_base_url = urljoin(urljoin(EDGAR_ARCHIVES_BASE_URL, cik),(accession_number_no_dash))
@@ -1030,7 +1041,7 @@ class Downloader:
         filing_date = hit["_source"]["file_date"]
         return {
             "form_type": hit["_source"]["root_form"],
-            "accession_number": accession_number,
+            "accession_number": accession_number_no_dash,
             "cik": cik,
             "base_url": submission_base_url,
             "main_file_name": filing_details_filename,
@@ -1137,7 +1148,7 @@ class Downloader:
         return self._session.post(*args, **kwargs)
         
 
-    def _create_session(self, retry=10) -> requests.Session:
+    def _create_session(self, retry: int=10) -> requests.Session:
         '''create a session used by the Downloader with a retry
         strategy on all urls. retries on status:
             500, 502, 503, 504, 403 .'''
@@ -1153,3 +1164,5 @@ class Downloader:
         session.mount("http://", adapter)
         session.mount("https://", adapter)
         return session
+
+
