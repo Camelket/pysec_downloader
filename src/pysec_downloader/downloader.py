@@ -38,7 +38,8 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
-from ._constants import *
+# from _constants import *
+# from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -46,8 +47,10 @@ logging.basicConfig(level=logging.DEBUG)
 # debug = True
 debug = False
 if debug is True:
+    from _constants import *
     logger.setLevel(logging.DEBUG)
 else:
+    from ._constants import *
     logger.setLevel(logging.INFO)
     
 
@@ -202,16 +205,20 @@ class IndexHandler:
         num_remove_count = 0
 
         for b in base_indexes:
-            self._check_base_index_file(base_remove_count, b)
+            logger.debug(f"remove_count before: {base_remove_count}")
+            base_remove_count += self._check_base_index_file(b)
+            logger.debug(f"remove_count after remove: {base_remove_count}")
+
 
         for n in num_indexes:
-            self._check_num_index_file(num_remove_count, n)
+            num_remove_count += self._check_num_index_file(n)
         logger.info((f"completed check of indexes \n"
                      f"base_index: {base_remove_count} entries removed \n"
                      f"num_index: {num_remove_count} entries removed \n"))
 
-    def _check_base_index_file(self, base_remove_count, b):
+    def _check_base_index_file(self, b):
         '''check if a file in the base index is missing and remove the entry if it is.'''
+        base_remove_count = 0
         base_changed = False
         original = pd.read_csv(b, delimiter=",")
             # remove duplicates
@@ -228,9 +235,11 @@ class IndexHandler:
             df = df.drop(drop_rows)
             df.to_csv(b)
             logger.debug(f"changed base_index: {b}")
+        return base_remove_count
 
-    def _check_num_index_file(self, num_remove_count, n):
+    def _check_num_index_file(self, n):
         '''check if a file in the num index is missing and remove it if it is.'''
+        num_remove_count = 0
         with open(n, "r+") as file_num_index:
             num_changed =  False
             num_index = json.load(file_num_index)
@@ -255,6 +264,7 @@ class IndexHandler:
                 logger.debug(f"changed num_index: {json.dumps(num_index, indent=2)}")
                 json.dump(num_index, file_num_index)
             logger.debug(f"changed num_index: {n}")
+        return num_remove_count
     
     def _get_base_index_as_dataframe(self, cik: str):
         '''get the index of cik as a dataframe with absolute file paths and the accession number added'''
@@ -1179,4 +1189,5 @@ class Downloader:
         return session
 
 
-
+dl = Downloader(r"E:\test\sec_scraping\resources\datasets")
+dl.index_handler.check_index()
