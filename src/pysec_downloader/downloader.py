@@ -38,8 +38,6 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
-# from _constants import *
-# from ._constants import *
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -233,7 +231,7 @@ class IndexHandler:
         if base_changed is True:
             base_remove_count += len(drop_rows)
             df = df.drop(drop_rows)
-            df.to_csv(b)
+            df.to_csv(b, index=False)
             logger.debug(f"changed base_index: {b}")
         return base_remove_count
 
@@ -1189,5 +1187,5 @@ class Downloader:
         return session
 
 
-dl = Downloader(r"E:\test\sec_scraping\resources\datasets")
-dl.index_handler.check_index()
+
+
