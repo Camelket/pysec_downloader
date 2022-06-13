@@ -27,7 +27,7 @@ import requests
 import json
 from urllib3.util import Retry
 import time
-from functools import wraps
+from functools import wraps, reduce
 import logging
 import pandas as pd
 from posixpath import join as urljoin
@@ -90,11 +90,10 @@ def _ensure_no_dash_accn(accn: str):
 
 
 class IndexHandler:
-    '''create, add to and query the index for files donwloaded with Downloader
+    '''create, add to and query the index for files downloaded with Downloader
     
     Attributes:
-        root_path: root path of the files, 
-                   should be the same as specified for Downloader
+        root_path: root path of the files.
     '''
 
     def __init__(self, root_path):
@@ -434,6 +433,7 @@ class Downloader:
             raise ValueError(f"root_path is expect to be of type str or pathlib.Path, got type: {type(path)}")
 
     def get_filing_by_accession_number(self, cik: str, form_type: str, accession_number: str, save_name: str, filing_date: str, file_nums: str, save: bool=True, create_index: bool=True, extract_zip: bool=True):
+        form_type = self._sanitize_form_type(form_type)
         logger.debug(f"\n Called get_filing_by_accession_number with args: {locals()}")
         base_url = urljoin(EDGAR_ARCHIVES_BASE_URL, cik)
         file_url = urljoin(base_url, accession_number, save_name)
@@ -962,14 +962,14 @@ class Downloader:
         return filing, save_name
     
     
-
-
-        
+    def _sanitize_form_type(self, form_type: str) -> str:
+        'remove "/" from the form_type and replace with "."'
+        return form_type.replace("/", ".")
     
     
     def _get_filing_save_path(self, ticker_or_cik: str, form_type: str, accn: str, file_name: str) -> str:
         'constructs and returns save path for a filing'
-        return (self.root_path / "filings" / ticker_or_cik / form_type / _ensure_no_dash_accn(accn) / file_name)
+        return reduce(lambda x, y: Path.joinpath(x, y), [self.root_path, "filings", ticker_or_cik, self._sanitize_form_type(form_type), _ensure_no_dash_accn(accn), file_name])
 
     def _save_filing(self, cik, form_type, accession_number, save_name, file, extract_zip=False):
         # save by cik and add searching folders by ticker in query class
@@ -1061,7 +1061,7 @@ class Downloader:
         xsl = hit["_source"]["xsl"] if hit["_source"]["xsl"] else None
         filing_date = hit["_source"]["file_date"]
         return {
-            "form_type": hit["_source"]["root_form"],
+            "form_type": self._sanitize_form_type(hit["_source"]["form"] if hit["_source"]["form"] else hit["_source"]["root_form"]),
             "accession_number": accession_number_no_dash,
             "cik": cik,
             "base_url": submission_base_url,
