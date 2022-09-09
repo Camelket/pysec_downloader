@@ -38,6 +38,8 @@ from zipfile import BadZipFile, ZipFile
 from csv import writer
 from datetime import datetime
 import pandas as pd
+from tqdm.auto import tqdm
+import shutil
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -334,10 +336,10 @@ class IndexHandler:
             with open(file_num_path, "w") as f:
                 content = {}
         try:
-            content[file_num].append(file_num_row)
+            if file_num_row not in content[file_num]:
+                content[file_num].append(file_num_row)
         except KeyError:
-            content[file_num] = []
-            content[file_num].append(file_num_row)
+            content[file_num] = [file_num_row]
         with open(file_num_path, "w") as f:
             json.dump(content, f)
         
@@ -679,55 +681,55 @@ class Downloader:
             extract: extract the zip into /companyfacts or just save the zip
                      in the root_path
         '''
-        resp = self._get(url=SEC_BULK_COMPANYFACTS, headers=self._sec_files_headers)
-        resp.raise_for_status()
-        if resp:
-            resp = resp.content
         if extract is True:
-            (self.root_path / "companyfacts").mkdir(parents=True, exist_ok=True)
-            save_path = self.root_path / "temp.zip"
-            if save_path.exists() and save_path.is_file():
-                save_path.unlink()
-            save_path.write_bytes(resp)
-            extract_path = self.root_path / "companyfacts"
-            try:   
-                with ZipFile(save_path, "r") as z:
-                    z.extractall(extract_path)
-            except BadZipFile as e:
-                logger.info(f"zipfile info: {save_path.stat()}. \n somehow got a bad zipfile, make sure connection is stable")
-            finally:    
-                save_path.unlink()
+            self._handle_download_zip_file_with_extract(url=SEC_BULK_COMPANYFACTS, extract_path=self.root_path / "companyfacts")
         else:
-            save_path = self.root_path / "companyfacts.zip"
-            save_path.write_bytes(resp)
+            self._handle_download_zip_file_without_extract(url=SEC_BULK_COMPANYFACTS, save_path=self.root_path / "companyfacts.zip")
             
     
     def get_bulk_submissions(self, extract: bool=True):
-        '''get a file of all the sec submissions for every company in one zip file
-            (~1.2GB, extracted ~6GB)
+        '''get all the submissions in one zip file (~1.2GB, extracted ~6GB)
         
         Args:
             extract: extract the zip into /submissions or just save the zip
                      in the root_path
         '''
-        resp = self._get(url=SEC_BULK_SUBMISSIONS, headers=self._sec_files_headers)
+        if extract is True:
+            self._handle_download_zip_file_with_extract(url=SEC_BULK_SUBMISSIONS, extract_path=self.root_path / "submissions")
+        else:
+            self._handle_download_zip_file_without_extract(url=SEC_BULK_SUBMISSIONS, save_path=self.root_path / "submissions.zip")
+
+
+    def _handle_download_zip_file_without_extract(self, url: str, save_path: str):
+        resp = self._get(url=url, headers=self._sec_files_headers, stream=True)
         resp.raise_for_status()
         if resp:
-            resp = resp.content
-        if extract is True:
-            (self.root_path / "submissions").mkdir(parents=True, exist_ok=True)
-            save_path = self.root_path / "temp.zip"
-            if save_path.exists() and save_path.is_file():
+            with resp as r:
+                total_length = int(r.headers.get("Content-Length"))
+                with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
+                    with open(save_path, "wb") as f:
+                        shutil.copyfileobj(raw, f)
+    
+    def _handle_download_zip_file_with_extract(self, url, extract_path: str):
+        resp = self._get(url=url, headers=self._sec_files_headers, stream=True)
+        resp.raise_for_status()
+        if resp:
+            with resp as r:
+                total_length = int(r.headers.get("Content-Length"))
+                save_path = self.root_path / "temp.zip"
+                if save_path.exists() and save_path.is_file():
+                    save_path.unlink()
+                with tqdm.wrapattr(r.raw, "read", total=total_length, desc="") as raw:
+                    (self.root_path / "submissions").mkdir(parents=True, exist_ok=True)
+                    with open(save_path, "wb") as f:
+                        shutil.copyfileobj(raw, f)
+                logger.debug(f"wrote the zip file successfully, url: {url}, interim_save_path: {save_path}")
+                with ZipFile(save_path, "r") as z:
+                    logger.debug(f"starting extraction of zip file:{datetime.now()}")
+                    z.extractall(extract_path)
+                    logger.debug(f"finished extraction of zip file: {datetime.now()}")
                 save_path.unlink()
-            save_path.write_bytes(resp)
-            extract_path = self.root_path / "submissions"   
-            with ZipFile(save_path, "r") as z:
-                z.extractall(extract_path)
-            save_path.unlink()
-        else:
-            save_path = self.root_path / "submissions.zip"
-            save_path.write_bytes(resp)
-
+                    
 
     def get_file_company_tickers(self) -> dict:
         '''download the cik, tickers file from the sec.
@@ -1032,7 +1034,7 @@ class Downloader:
     
     def _resolve_relative_urls(self, filing: str, base_url: str):
         'changes relative to absolute urls.'
-        soup = BeautifulSoup(filing)
+        soup = BeautifulSoup(filing, features="lxml")
         base = base_url
         for rurl in soup.find_all("a", href=True):
             href = rurl["href"]
