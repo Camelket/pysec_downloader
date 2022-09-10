@@ -8,6 +8,7 @@ py = "*"
 build = "*"
 twine = "*"
 pysec-downloader = "*"
+requests-mock = "*"
 
 [dev-packages]
 
