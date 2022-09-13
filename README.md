@@ -15,7 +15,7 @@ no tests at the moment.
 
 ## usage:
 
-
+General Usage
 ```python
 # Make sure you have needed permission for the root_path!
 # Instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
@@ -34,25 +34,70 @@ dl.get_filings(
 # if the `number_of_filings` is large you might consider using `get_filings_bulk()` 
 # instead of `get_filings()` for a more efficent index creation.
 
+```
+
+```python
 # get Facts (individual values) from a single Concept ("AccountPayableCurrent") of a Taxonomy ("us-gaap")
 facts_file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent")
-
+```
+```python
 # download the zip containing all information on submissions of every company and extract it
 # Calling `get_bulk_submissions` or `get_bulk_companyfacts` downloads >10GB of files!
 dl.get_bulk_submissions()
 
 # get the company-ticker map/file 
 other_file = dl.get_file_company_tickers()
+```
 
-
+Get the file containg all CUSIPS relating to 13f securities (as defined in [17 CFR § 240.13f-1](https://www.law.cornell.edu/cfr/text/17/240.13f-1)) 
+```python
 # download the most current 13f securities pdf
 dl.get_13f_securities_pdf(path_to/save_as.pdf)
 # get a byte reprensentation of the pdf without saving it
 dl.get_13f_securities_pdf(target_path=None)
 ```
+
 easy way to convert the 13f securities pdf into a usuable dataframe/list -> [tabula-py](https://github.com/chezou/tabula-py)
+```python
+
+from tabula import read_pdf
+from pathlib import Path
+import pandas as pd
 
 
+def convert_13f_securities_pdf(pdf_path: str, target_path: str=None, mode: str="csv", overwrite=True):
+    '''
+    Args:
+        pdf_path: path to the pdf file
+        target_path: output file
+        mode: set output mode. valid modes are: 'csv' 
+    
+    Raises:
+        FileExistsError: if overwrite is False and a file already exists at target_path
+    '''
+    df = read_pdf(pdf_path, pages="all", pandas_options={"header": None})
+        
+    if mode == "csv":
+        if Path(target_path).is_file():
+            if overwrite is False:
+                raise FileExistsError("a file with that name already exists")
+            else:
+                Path(target_path).unlink()
+    dfs = []
+    for d in df:
+        if d.shape[1] == 5:
+            d = d.drop(d.columns[1], axis="columns")
+        if d.shape[1] == 4:
+            d = d.drop(d.columns[-1], axis="columns")
+        if mode == "csv":
+            d.to_csv(target_path, mode="a", index=False, header=False)
+        if target_path is None:
+            dfs.append(d)
+    if target_path is None:
+        return dfs
+```
+
+Usage of IndexHandler
 ```python
 # check if S-3's were filed after "2020-01-01", get the submission info and download them.
 
