@@ -15,7 +15,7 @@ no tests at the moment.
 
 ## usage:
 
-General Usage
+### General Usage
 ```python
 # Make sure you have needed permission for the root_path!
 # Instantiate the Downloader and download some 10-Q Filings as XBRL for AAPL
@@ -36,6 +36,7 @@ dl.get_filings(
 
 ```
 
+### Bulk Files (companyfacts XBRL and submissions)
 ```python
 # get Facts (individual values) from a single Concept ("AccountPayableCurrent") of a Taxonomy ("us-gaap")
 facts_file = dl.get_xbrl_companyconcept("AAPL", "us-gaap", "AccountsPayableCurrent")
@@ -49,6 +50,7 @@ dl.get_bulk_submissions()
 other_file = dl.get_file_company_tickers()
 ```
 
+### 13f securiies (CUSIPS of most securities)
 Get the file containg all CUSIPS relating to 13f securities (as defined in [17 CFR § 240.13f-1](https://www.law.cornell.edu/cfr/text/17/240.13f-1)) 
 ```python
 # download the most current 13f securities pdf
@@ -97,7 +99,7 @@ def convert_13f_securities_pdf(pdf_path: str, target_path: str=None, mode: str="
         return dfs
 ```
 
-Usage of IndexHandler
+### Usage of IndexHandler
 ```python
 # check if S-3's were filed after "2020-01-01", get the submission info and download them.
 
