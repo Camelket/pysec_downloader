@@ -305,9 +305,11 @@ class IndexHandler:
 
     def _get_accession_number_from_relative_path(self, rel_path: str | Path):
         if isinstance(rel_path, str):
-            return _ensure_no_dash_accn(str(Path(rel_path).parent.name))
+            rel_path = Path(rel_path)
         if isinstance(rel_path, Path):
-            return _ensure_no_dash_accn(str(rel_path.parent.name))
+            for parent in Path(rel_path).parents:
+                if len(_ensure_no_dash_accn(str(parent.name))) == 18:
+                    return _ensure_no_dash_accn(str(parent.name))
         raise TypeError(f"rel_path should be of type str or pathlib.Path, got: {type(rel_path)}")
     
     def _relative_to_absolute_filing_path(self, rel_path: str):
