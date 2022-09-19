@@ -124,7 +124,7 @@ class IndexHandler:
         return self._get_base_index_as_dataframe(cik).to_dict("records")
     
 
-    def get_newer_filings_meta(self, cik: str, after: str, tracked_filings: set = None):
+    def get_newer_filings_meta(self, cik: str, after: str, tracked_filings: set = set([None])):
         '''check a submission file and get filings newer than 'after'.
         
         only works if you have downloaded the bulk submissions file!
@@ -144,23 +144,26 @@ class IndexHandler:
             cik = cik.zfill(10)
         path = self.root_path / "submissions" / ("CIK" + cik + ".json") 
         new_filings = {cik: []}
+        none_set = set([None])
         with open(path, "r") as f:
             j = json.load(f)
             stop_idx = None
             try:
-                filing_dates = j["filings"]["recent"]["filingDate"]
+                filing_dates = sorted(j["filings"]["recent"]["filingDate"], reverse=True)
                 len_f_dates = len(filing_dates)
 
                 for r in range(0, len_f_dates, 1):
-                    if filing_dates[r] <= after:
+                    if filing_dates[r] >= after:
                         if r == len_f_dates:
                             break
                         stop_idx = r
+                    else:
                         break
+                        
                 if stop_idx is not None:
                     filing = j["filings"]["recent"]
                     for idx in range(0, stop_idx, 1):
-                        if (filing["form"][idx] in tracked_filings) or (tracked_filings is None):
+                        if (filing["form"][idx] in tracked_filings) or (tracked_filings == none_set):
                             new_filings[cik].append(
                                [filing["form"][idx],
                                 _ensure_no_dash_accn(filing["accessionNumber"][idx]),
