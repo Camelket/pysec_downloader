@@ -45,9 +45,9 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 # debug = True
-debug = False
+debug = True
 if debug is True:
-    from _constants import *
+    from ._constants import *
     logger.setLevel(logging.DEBUG)
 else:
     from ._constants import *
@@ -89,6 +89,12 @@ def _ensure_no_dash_accn(accn: str):
         return accn
     else:
         return accn.replace("-", "")
+
+def _get_correct_primary_file_name(main_file: str):
+    if "/" in main_file:
+        return main_file.split("/")[-1]
+    else:
+        return main_file
 
 
 class IndexHandler:
@@ -167,7 +173,7 @@ class IndexHandler:
                             new_filings[cik].append(
                                [filing["form"][idx],
                                 _ensure_no_dash_accn(filing["accessionNumber"][idx]),
-                                filing["primaryDocument"][idx],
+                                _get_correct_primary_file_name(filing["primaryDocument"][idx]),
                                 filing["filingDate"][idx],
                                 [filing["fileNumber"][idx]]])
             except KeyError as e:
