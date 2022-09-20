@@ -231,6 +231,9 @@ class IndexHandler:
         original = pd.read_csv(b, delimiter=",")
             # remove duplicates
         df = original.drop_duplicates()
+        if len(df) != len(original):
+            base_changed = True
+            base_remove_count += len(original) - len(df)
         drop_rows = []
             # load the file_num_index
         for row in df.iloc:
@@ -239,8 +242,9 @@ class IndexHandler:
                 base_changed = True
                 drop_rows.append(row.name)
         if base_changed is True:
-            base_remove_count += len(drop_rows)
-            df = df.drop(drop_rows)
+            if  drop_rows != []:
+                base_remove_count += len(drop_rows)
+                df = df.drop(drop_rows)
             df.to_csv(b, index=False)
             logger.debug(f"changed base_index: {b}")
         return base_remove_count
